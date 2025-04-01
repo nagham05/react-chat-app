@@ -3,35 +3,67 @@ import { FaSearch } from "react-icons/fa";
 import { FaXmark } from "react-icons/fa6";
 import { RiSearchLine } from "react-icons/ri";
 import defaultAvatar from "../assets/defaultavatar.png";
+import { useAuth } from "../context/AuthContext";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "../firebase";
 
 const SearchModal = ({ startChat }) => {
+    const { currentUser } = useAuth();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
     const openModal = () => setIsModalOpen(true);
-    const closeModal = () => setIsModalOpen(false);
+    const closeModal = () => {
+        setIsModalOpen(false);
+        setSearchTerm("");
+        setUsers([]);
+        setError("");
+    };
 
-    const handleSearch = () => {
+    const handleSearch = async () => {
         if (!searchTerm.trim()) {
-            alert("Please enter a search term");
+            setError("Please enter a search term");
             return;
         }
 
-        // Placeholder users for display (instead of database fetch)
-        const sampleUsers = [
-            { fullName: "John Doe", username: "johndoe", image: defaultAvatar },
-            { fullName: "Jane Smith", username: "janesmith", image: defaultAvatar },
-        ];
+        try {
+            setLoading(true);
+            setError("");
 
-        const filteredUsers = sampleUsers.filter((user) =>
-            user.username.toLowerCase().includes(searchTerm.toLowerCase())
-        );
+            const usersRef = collection(db, 'Users');
+            const q = query(
+                usersRef,
+                where('email', '>=', searchTerm.toLowerCase()),
+                where('email', '<=', searchTerm.toLowerCase() + '\uf8ff')
+            );
 
-        setUsers(filteredUsers);
+            const querySnapshot = await getDocs(q);
+            const foundUsers = querySnapshot.docs
+                .map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }))
+                .filter(user => user.id !== currentUser.uid);
 
-        if (filteredUsers.length === 0) {
-            alert("No users found");
+            setUsers(foundUsers);
+
+            if (foundUsers.length === 0) {
+                setError("No users found");
+            }
+        } catch (error) {
+            console.error('Error searching users:', error);
+            setError("Failed to search users. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            handleSearch();
         }
     };
 
@@ -54,30 +86,46 @@ const SearchModal = ({ startChat }) => {
                                 <div className="space-y-4">
                                     <div className="flex gap-2">
                                         <input
+                                            value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
+                                            onKeyPress={handleKeyPress}
                                             type="text"
                                             className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg outline-none w-full p-2.5"
-                                            placeholder="Search users"
+                                            placeholder="Search by email"
+                                            disabled={loading}
                                         />
-                                        <button onClick={handleSearch} className="bg-green-900 text-white px-3 py-2 rounded-lg">
-                                            <FaSearch />
+                                        <button 
+                                            onClick={handleSearch} 
+                                            className="bg-green-900 text-white px-3 py-2 rounded-lg disabled:opacity-50"
+                                            disabled={loading}
+                                        >
+                                            {loading ? 'Searching...' : <FaSearch />}
                                         </button>
                                     </div>
                                 </div>
+                                {error && (
+                                    <div className="mt-4 text-white text-sm text-center">
+                                        {error}
+                                    </div>
+                                )}
                                 <div className="mt-6">
-                                    {users.map((user, index) => (
+                                    {users.map((user) => (
                                         <div
-                                            key={index}
+                                            key={user.id}
                                             onClick={() => {
                                                 startChat(user);
                                                 closeModal();
                                             }}
-                                            className="flex items-start gap-3 bg-[#15eabc34] p-2 mb-3 rounded-lg cursor-pointer border border-[#ffffff20] shadow-lg"
+                                            className="flex items-start gap-3 bg-[#15eabc34] p-2 mb-3 rounded-lg cursor-pointer border border-[#ffffff20] shadow-lg hover:bg-[#15eabc50] transition-colors"
                                         >
-                                            <img src={user.image} className="h-[40px] w-[40px] rounded-full" alt="" />
+                                            <img 
+                                                src={user.profile_pic || defaultAvatar} 
+                                                className="h-[40px] w-[40px] rounded-full object-cover" 
+                                                alt={user.name} 
+                                            />
                                             <span>
-                                                <h2 className="p-0 font-semibold text-white text-[18px]">{user.fullName}</h2>
-                                                <p className="text-[13px] text-white">@{user.username}</p>
+                                                <h2 className="p-0 font-semibold text-white text-[18px]">{user.name}</h2>
+                                                <p className="text-[13px] text-white">{user.email}</p>
                                             </span>
                                         </div>
                                     ))}

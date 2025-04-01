@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
   const [user, setUser] = useState({
     email: '',
     password: ''
   });
-
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -17,15 +20,18 @@ const Login = () => {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log(user);
-    setUser({
-      email: '',
-      password: ''
-    });
-
-    navigate('/chat');
+    try {
+      setError('');
+      setLoading(true);
+      await login(user.email, user.password);
+      navigate('/chat');
+    } catch (error) {
+      setError('Failed to sign in. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -35,6 +41,12 @@ const Login = () => {
           <h1 className='text-center text-[28px] font-bold'>Sign In</h1>
           <p className='text-center text-sm text-gray-400'>Welcome back, login to continue</p>
         </div>
+
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4 w-full" role="alert">
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
 
         <div className="w-full">
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
@@ -61,15 +73,16 @@ const Login = () => {
             <div className="w-full">
               <button
                 type="submit"
-                className="bg-[#01aa85] text-white w-full p-2 rounded-md font-medium flex items-center gap-2 justify-center"
+                disabled={loading}
+                className="bg-[#01aa85] text-white w-full p-2 rounded-md font-medium flex items-center gap-2 justify-center disabled:opacity-50"
               >
-                Login
+                {loading ? 'Logging in...' : 'Login'}
               </button>
             </div>
           </form>
 
           <div className="mt-5 text-center text-gray-400 text-sm">
-            <button>Don't have an account? <a href="/register">Sign up</a></button>
+            <button>Don't have an account? <Link to="/register" className="text-[#01aa85] hover:underline">Sign up</Link></button>
           </div>
         </div>
       </div>

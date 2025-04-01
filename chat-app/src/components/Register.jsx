@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // Import useNavigate
-import { Link } from 'react-router-dom'; // Import Link for navigation
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const Register = () => {
   const [user, setUser] = useState({
@@ -8,8 +8,10 @@ const Register = () => {
     email: '',
     password: ''
   });
-
-  const navigate = useNavigate();  // Initialize useNavigate for redirection
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const { signup } = useAuth();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -19,19 +21,18 @@ const Register = () => {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log(user); // Handle your registration logic here (e.g., Firebase authentication)
-
-    // After successful registration, redirect to the chat page
-    navigate('/chat');  // Redirect to the /chat route
-
-    // Clear the input fields after submission
-    setUser({
-      name: '',
-      email: '',
-      password: ''
-    });
+    try {
+      setError('');
+      setLoading(true);
+      await signup(user.email, user.password, user.name);
+      navigate('/chat');
+    } catch (error) {
+      setError('Failed to create an account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -41,6 +42,12 @@ const Register = () => {
           <h1 className='text-center text-[28px] font-bold'>Signup</h1>
           <p className='text-center text-sm text-gray-400'>Welcome, create an account to continue</p>
         </div>
+
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4 w-full" role="alert">
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
 
         <div className="w-full">
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
@@ -72,16 +79,18 @@ const Register = () => {
               required
             />
             <div className="w-full">
-              <button type='submit' className='bg-[#01aa85] text-white w-full p-2 rounded-md font-medium flex items-center gap-2 justify-center'>
-                Signup
+              <button 
+                type='submit' 
+                disabled={loading}
+                className='bg-[#01aa85] text-white w-full p-2 rounded-md font-medium flex items-center gap-2 justify-center disabled:opacity-50'
+              >
+                {loading ? 'Creating Account...' : 'Signup'}
               </button>
             </div>
           </form>
 
           <div className='mt-5 text-center text-gray-400 text-sm'>
-            <Link to="/login">
-              <button className="text-gray-400">Already have an account? Sign in</button>
-            </Link>
+            <button>Already have an account? <Link to="/login" className="text-[#01aa85] hover:underline">Sign in</Link></button>
           </div>
         </div>
       </div>
