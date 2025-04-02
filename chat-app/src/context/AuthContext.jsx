@@ -100,6 +100,33 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Upload file to Supabase storage
+  const uploadFile = async (file) => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const uniqueFileName = `${currentUser.uid}-${Date.now()}.${fileExt}`;
+      const filePath = `chat-files/${uniqueFileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('chat-app')
+        .upload(filePath, file);
+
+      if (error) {
+        throw new Error('Error uploading file: ' + error.message);
+      }
+
+      // Get the public URL for the uploaded file
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-app')
+        .getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      throw error;
+    }
+  };
+
   // Send message
   async function sendMessage(content, receiverId, type = 'text', fileUrl = null, fileName = null) {
     try {
@@ -216,6 +243,7 @@ export function AuthProvider({ children }) {
     login,
     logout,
     uploadProfilePicture,
+    uploadFile,
     sendMessage,
     getMessages,
     blockUser,

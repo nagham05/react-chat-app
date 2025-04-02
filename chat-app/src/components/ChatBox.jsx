@@ -9,7 +9,7 @@ import supabase from "../supabase";
 import ConfirmationModal from "./ConfirmationModal";
 
 const ChatBox = ({ selectedUser }) => {
-    const { currentUser, sendMessage, uploadProfilePicture, blockUser, unblockUser } = useAuth();
+    const { currentUser, sendMessage, uploadFile, blockUser, unblockUser } = useAuth();
     const [messages, setMessages] = useState([]);
     const [messageText, setMessageText] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
@@ -77,38 +77,39 @@ const ChatBox = ({ selectedUser }) => {
         try {
             setLoading(true);
             let fileUrl = null;
-            let newMessage = {
-                senderId: currentUser.uid,
-                receiverId: selectedUser.id,
-                sentAt: new Date().toISOString(),
-                type: 'text',
-                content: messageText
-            };
+            let messageType = 'text';
+            let fileName = null;
+            let content = messageText;
 
             if (selectedFile) {
-                fileUrl = await uploadProfilePicture(selectedFile, `${currentUser.uid}-${Date.now()}`);
-                const fileType = getFileType(selectedFile.name);
-                newMessage = {
-                    ...newMessage,
-                    type: fileType,
-                    content: fileUrl,
-                    fileName: selectedFile.name
-                };
+                // Upload file using the new uploadFile function
+                fileUrl = await uploadFile(selectedFile);
+                messageType = getFileType(selectedFile.name);
+                fileName = selectedFile.name;
+                content = fileUrl;
             }
 
             // Add message to Firestore
             const messageRef = await sendMessage(
-                newMessage.content,
+                content,
                 selectedUser.id,
-                newMessage.type,
+                messageType,
                 fileUrl,
-                selectedFile?.name
+                fileName
             );
 
             // Add message to local state immediately
-            newMessage.id = messageRef.id;
-            setMessages(prevMessages => [...prevMessages, newMessage]);
+            const newMessage = {
+                id: messageRef.id,
+                senderId: currentUser.uid,
+                receiverId: selectedUser.id,
+                content: content,
+                type: messageType,
+                sentAt: new Date().toISOString(),
+                ...(fileName && { fileName })
+            };
 
+            setMessages(prevMessages => [...prevMessages, newMessage]);
             setMessageText("");
             setSelectedFile(null);
         } catch (error) {
