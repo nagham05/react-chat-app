@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import defaultAvatar from "../assets/defaultavatar.png";
-import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfollowFill, RiUserFollowFill } from "react-icons/ri";
+import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfollowFill, RiUserFollowFill, RiEmotionLine } from "react-icons/ri";
 import logo from "../assets/logo.png";
 import { useAuth } from "../context/AuthContext";
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
@@ -8,6 +8,7 @@ import { db } from "../firebase";
 import supabase from "../supabase";
 import ConfirmationModal from "./ConfirmationModal";
 import MessageContextMenu from './MessageContextMenu';
+import EmojiPicker from 'emoji-picker-react';
 
 const ChatBox = ({ selectedUser }) => {
     const { currentUser, sendMessage, uploadFile, blockUser, unblockUser, removeReaction, addReaction, markMessageAsRead, getUnreadCount } = useAuth();
@@ -24,7 +25,9 @@ const ChatBox = ({ selectedUser }) => {
     const scrollRef = useRef(null);
     const fileInputRef = useRef(null);
     const menuRef = useRef(null);
+    const emojiPickerRef = useRef(null);
     const [contextMenu, setContextMenu] = useState(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     useEffect(() => {
         if (!selectedUser) return;
@@ -101,20 +104,12 @@ const ChatBox = ({ selectedUser }) => {
                 fileName
             );
 
-            // Add message to local state immediately
-            const newMessage = {
-                id: messageRef.id,
-                senderId: currentUser.uid,
-                receiverId: selectedUser.id,
-                content: content,
-                type: messageType,
-                sentAt: new Date().toISOString(),
-                ...(fileName && { fileName })
-            };
-
-            setMessages(prevMessages => [...prevMessages, newMessage]);
+            // Clear input fields immediately
             setMessageText("");
             setSelectedFile(null);
+            
+            // Don't manually add the message to state - let the onSnapshot listener handle it
+            // This prevents duplicate messages from appearing
         } catch (error) {
             console.error('Error sending message:', error);
         } finally {
@@ -391,6 +386,23 @@ const ChatBox = ({ selectedUser }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const onEmojiClick = (emojiObject) => {
+        setMessageText(prevText => prevText + emojiObject.emoji);
+        setShowEmojiPicker(false);
+    };
+
+    // Add click outside handler for emoji picker
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+                setShowEmojiPicker(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     return (
         <>
             {selectedUser ? (
@@ -454,14 +466,14 @@ const ChatBox = ({ selectedUser }) => {
 
                     <main className="custom-scrollbar relative h-[100vh] w-[100%] flex flex-col justify-between">
                         <section className="px-3 pt-5 b-20 lg:pb-10">
-                            <div ref={scrollRef} className="overflow-auto h-[80vh]">
+                            <div ref={scrollRef} className="overflow-auto h-[80vh] scrollbar-hide">
                                 {isBlocked && (
                                     <div className="flex justify-center mb-4">
                                         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-center max-w-md">
                                             You have blocked this user. You cannot send or receive messages from them.
                                         </div>
-                                                                </div>
-                                                            )}
+                                    </div>
+                                )}
                                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                                     {messages.map((message) => (
                                         <div
@@ -470,7 +482,7 @@ const ChatBox = ({ selectedUser }) => {
                                         >
                                             {renderMessageContent(message)}
                                         </div>
-                                ))}
+                                    ))}
                                 </div>
                             </div>
                         </section>
@@ -482,30 +494,38 @@ const ChatBox = ({ selectedUser }) => {
                                         : "This user has blocked you. You cannot send or receive messages from them."}
                                 </div>
                             ) : (
-                            <form onSubmit={handleSendMessage} className="flex items-center bg-white h-[60px] w-[100%] px-4 rounded-lg relative shadow-lg">
-                                <input
-                                    value={messageText}
+                                <form onSubmit={handleSendMessage} className="flex items-center bg-white h-[60px] w-[100%] px-4 rounded-lg relative shadow-lg">
+                                    <input
+                                        value={messageText}
                                         onChange={(e) => setMessageText(e.target.value)}
-                                    className="h-full text-[#2A3D39] outline-none text-[16px] pl-4 pr-[50px] rounded-lg w-[90%]"
-                                    type="text"
-                                    placeholder="Write your message..."
+                                        className="h-full text-[#2A3D39] outline-none text-[16px] pl-4 pr-[50px] rounded-lg w-[90%]"
+                                        type="text"
+                                        placeholder="Write your message..."
                                         disabled={loading}
-                                />
-                                <div className="flex items-center">
+                                    />
+                                    <div className="flex items-center">
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                            className="flex items-center justify-center p-2 rounded-full hover:bg-[#D9f2ed] transition duration-200"
+                                            disabled={loading}
+                                        >
+                                            <RiEmotionLine color="#01AA85" size={24} />
+                                        </button>
                                         <button 
                                             type="button" 
                                             onClick={() => fileInputRef.current.click()} 
                                             className="flex items-center justify-center p-2 rounded-full hover:bg-[#D9f2ed] transition duration-200"
                                             disabled={loading}
                                         >
-                                        <RiImageAddFill color="#01AA85" size={24} />
-                                    </button>
-                                    <input
-                                        type="file"
-                                        ref={fileInputRef}
-                                        onChange={handleFileUpload}
-                                        className="hidden"
-                                        accept="image/*,video/*,.pdf,.doc,.docx"
+                                            <RiImageAddFill color="#01AA85" size={24} />
+                                        </button>
+                                        <input
+                                            type="file"
+                                            ref={fileInputRef}
+                                            onChange={handleFileUpload}
+                                            className="hidden"
+                                            accept="image/*,video/*,.pdf,.doc,.docx"
                                             disabled={loading}
                                         />
                                         <button 
@@ -513,10 +533,18 @@ const ChatBox = ({ selectedUser }) => {
                                             className="flex items-center justify-center p-2 rounded-full bg-[#D9f2ed] hover:bg-[#c8eae3] text-lg ml-2"
                                             disabled={loading}
                                         >
-                                        <RiSendPlaneFill color="#01AA85" size={24} />
-                                    </button>
-                                </div>
-                            </form>
+                                            <RiSendPlaneFill color="#01AA85" size={24} />
+                                        </button>
+                                    </div>
+                                    {showEmojiPicker && (
+                                        <div 
+                                            ref={emojiPickerRef}
+                                            className="absolute bottom-[70px] right-0 z-50"
+                                        >
+                                            <EmojiPicker onEmojiClick={onEmojiClick} />
+                                        </div>
+                                    )}
+                                </form>
                             )}
                             {selectedFile && (
                                 <div className="mt-2 p-2 bg-gray-100 rounded-lg flex items-center justify-between cursor-pointer">

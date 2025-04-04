@@ -18,6 +18,9 @@ const ChatList = ({ setSelectedUser }) => {
   useEffect(() => {
     if (!currentUser) return;
 
+    // Create a map to track unique chats by user ID
+    const uniqueChatsMap = new Map();
+    
     // First, get all messages where the current user is either sender or receiver
     const messagesRef = collection(db, 'Messages');
     const messagesQuery = query(
@@ -59,18 +62,17 @@ const ChatList = ({ setSelectedUser }) => {
         });
 
         const sentChats = (await Promise.all(userPromises)).filter(Boolean);
-        setChats(prevChats => {
-          const newChats = [...prevChats];
-          sentChats.forEach(chat => {
-            const existingIndex = newChats.findIndex(c => c.id === chat.id);
-            if (existingIndex >= 0) {
-              newChats[existingIndex] = chat;
-            } else {
-              newChats.push(chat);
-            }
-          });
-          return newChats.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+        
+        // Update the unique chats map with sent messages
+        sentChats.forEach(chat => {
+          uniqueChatsMap.set(chat.id, chat);
         });
+        
+        // Convert map to array and sort by last message time
+        const updatedChats = Array.from(uniqueChatsMap.values())
+          .sort((a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0));
+        
+        setChats(updatedChats);
         setIndexError(false);
       } catch (err) {
         console.error('Error processing sent messages:', err);
@@ -109,18 +111,17 @@ const ChatList = ({ setSelectedUser }) => {
         });
 
         const receivedChats = (await Promise.all(userPromises)).filter(Boolean);
-        setChats(prevChats => {
-          const newChats = [...prevChats];
-          receivedChats.forEach(chat => {
-            const existingIndex = newChats.findIndex(c => c.id === chat.id);
-            if (existingIndex >= 0) {
-              newChats[existingIndex] = chat;
-            } else {
-              newChats.push(chat);
-            }
-          });
-          return newChats.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+        
+        // Update the unique chats map with received messages
+        receivedChats.forEach(chat => {
+          uniqueChatsMap.set(chat.id, chat);
         });
+        
+        // Convert map to array and sort by last message time
+        const updatedChats = Array.from(uniqueChatsMap.values())
+          .sort((a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0));
+        
+        setChats(updatedChats);
         setIndexError(false);
       } catch (err) {
         console.error('Error processing received messages:', err);
