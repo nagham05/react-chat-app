@@ -41,7 +41,7 @@ const App = () => {
             }
           />
           
-          <Route path="/" element={<Navigate to="/chat" />} />
+          <Route path="/"  element={<Login />} />
         </Routes>
       </Router>
     </AuthProvider>
