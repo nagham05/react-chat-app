@@ -7,9 +7,10 @@ import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp,
 import { db } from "../firebase";
 import supabase from "../supabase";
 import ConfirmationModal from "./ConfirmationModal";
+import MessageContextMenu from './MessageContextMenu';
 
 const ChatBox = ({ selectedUser }) => {
-    const { currentUser, sendMessage, uploadFile, blockUser, unblockUser } = useAuth();
+    const { currentUser, sendMessage, uploadFile, blockUser, unblockUser, removeReaction, addReaction, markMessageAsRead, getUnreadCount } = useAuth();
     const [messages, setMessages] = useState([]);
     const [messageText, setMessageText] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
@@ -19,9 +20,11 @@ const ChatBox = ({ selectedUser }) => {
     const [showUnblockModal, setShowUnblockModal] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
     const [blockStatus, setBlockStatus] = useState(null);
+    const [unreadCount, setUnreadCount] = useState(0);
     const scrollRef = useRef(null);
     const fileInputRef = useRef(null);
     const menuRef = useRef(null);
+    const [contextMenu, setContextMenu] = useState(null);
 
     useEffect(() => {
         if (!selectedUser) return;
@@ -140,34 +143,177 @@ const ChatBox = ({ selectedUser }) => {
         );
     }, [messages, selectedUser?.id, currentUser?.uid]);
 
-    const renderMessageContent = (msg) => {
-        switch (msg.type) {
-            case 'text':
-                return <h4 className="whitespace-normal break-words max-w-[300px]">{msg.content}</h4>;
-            case 'image':
-                return (
-                    <img 
-                        src={msg.content} 
-                        alt={msg.fileName || "Shared image"} 
-                        className="max-w-[300px] max-h-[300px] rounded cursor-pointer"
-                        onClick={() => window.open(msg.content, '_blank')}
-                    />
-                );
-            case 'file':
-                return (
+    const handleMessageDoubleClick = (e, message) => {
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const menuWidth = 200; // Approximate width of the context menu
+        const windowWidth = window.innerWidth;
+        
+        // Calculate position to ensure menu is visible
+        let left = rect.left;
+        if (left + menuWidth > windowWidth) {
+            left = windowWidth - menuWidth - 10; // Add some padding from the window edge
+        }
+        
+        setContextMenu({
+            message,
+            position: {
+                x: left,
+                y: rect.top
+            }
+        });
+    };
+
+    const handleContextMenuClose = () => {
+        setContextMenu(null);
+    };
+
+    const updateMessageInState = (messageId, updates) => {
+        setMessages(prevMessages => {
+            if (updates.deleted) {
+                // Remove the message from the array if it's deleted
+                return prevMessages.filter(msg => msg.id !== messageId);
+            }
+            // Otherwise update the message properties
+            return prevMessages.map(msg => 
+                msg.id === messageId ? { ...msg, ...updates } : msg
+            );
+        });
+    };
+
+    const handleReactionClick = async (message, reaction) => {
+        try {
+            if (message.reactions?.[reaction]) {
+                await removeReaction(message.id, reaction);
+            } else {
+                await addReaction(message.id, reaction);
+            }
+            
+            // Reload messages to show the updated reactions
+            const messagesRef = collection(db, 'Messages');
+            const q = query(
+                messagesRef,
+                where('senderId', 'in', [currentUser.uid, selectedUser.id]),
+                where('receiverId', 'in', [currentUser.uid, selectedUser.id]),
+                orderBy('sentAt', 'asc')
+            );
+
+            const snapshot = await getDocs(q);
+            const newMessages = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setMessages(newMessages);
+        } catch (error) {
+            console.error('Error handling reaction:', error);
+        }
+    };
+
+    // Update unread count when messages change
+    useEffect(() => {
+        const updateUnreadCount = async () => {
+            if (selectedUser) {
+                const count = await getUnreadCount(selectedUser.id);
+                setUnreadCount(count);
+            }
+        };
+        updateUnreadCount();
+    }, [selectedUser, messages]);
+
+    // Mark messages as read when they are viewed
+    useEffect(() => {
+        const markMessagesAsRead = async () => {
+            if (!selectedUser || !currentUser) return;
+
+            const unreadMessages = messages.filter(
+                msg => msg.receiverId === currentUser.uid && !msg.read
+            );
+
+            for (const message of unreadMessages) {
+                await markMessageAsRead(message.id);
+            }
+        };
+
+        markMessagesAsRead();
+    }, [messages, selectedUser, currentUser]);
+
+    const renderMessageContent = (message) => {
+        // Don't render deleted messages
+        if (message.deleted) return null;
+
+        const formatTime = (timestamp) => {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        };
+
+        const isMessageRead = message.read && message.readAt;
+        const showReadReceipt = message.senderId === currentUser.uid;
+
+        return (
+            <div
+                className={`p-3 rounded-lg max-w-[70%] ${
+                    message.senderId === currentUser.uid
+                        ? 'bg-[#01AA85] text-white ml-auto'
+                        : 'bg-gray-100 text-gray-800'
+                }`}
+                onDoubleClick={(e) => handleMessageDoubleClick(e, message)}
+            >
+                {message.type === 'text' && (
+                    <div>
+                        <p>{message.content}</p>
+                        {message.edited && (
+                            <span className="text-xs opacity-70">(edited)</span>
+                        )}
+                    </div>
+                )}
+                {message.type === 'image' && (
+                    <div className="relative">
+                        <img
+                            src={message.content}
+                            alt="Shared image"
+                            className="max-h-[300px] w-auto rounded-lg cursor-pointer object-contain"
+                            onClick={() => window.open(message.content, '_blank')}
+                        />
+                    </div>
+                )}
+                {message.type === 'file' && (
                     <div className="flex items-center gap-2">
-                        <p className="text-gray-400 text-sm">{msg.fileName}</p>
-                        <button 
-                            className="text-teal-600 hover:text-teal-700 text-sm"
-                            onClick={() => window.open(msg.content, '_blank')}
+                        <span>{message.fileName}</span>
+                        <a
+                            href={message.content}
+                            download
+                            className="text-[#01AA85] hover:text-[#018a6d]"
                         >
                             Download
-                        </button>
+                        </a>
                     </div>
-                );
-            default:
-                return <p>Unsupported message type</p>;
-        }
+                )}
+                {message.reactions && Object.keys(message.reactions).length > 0 && (
+                    <div className="flex gap-1 mt-1">
+                        {Object.entries(message.reactions).map(([reaction, count]) => (
+                            <button
+                                key={reaction}
+                                onClick={() => handleReactionClick(message, reaction)}
+                                className="text-xs bg-white/20 px-1 rounded hover:bg-white/30 transition-colors"
+                            >
+                                {reaction} {count}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                <div className="flex items-center justify-end gap-1 mt-1">
+                    <div className="text-xs opacity-70">
+                        {formatTime(message.sentAt)}
+                    </div>
+                    {showReadReceipt && (
+                        <div className="text-xs opacity-70">
+                            {isMessageRead ? '✓✓' : '✓'}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
     };
 
     // Update the block status check
@@ -263,39 +409,46 @@ const ChatBox = ({ selectedUser }) => {
                                 <p className="font-light text-[#2A3D39] text-sm">{selectedUser?.email}</p>
                             </span>
                         </main>
-                        <div className="relative" ref={menuRef}>
-                            <RiMore2Fill 
-                                className="text-[#2A3D39] cursor-pointer" 
-                                size={24} 
-                                onClick={() => setShowMenu(!showMenu)} 
-                            />
-                            {showMenu && (
-                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-2 z-10">
-                                    {isBlocked ? (
-                                        <button
-                                            onClick={() => {
-                                                setShowUnblockModal(true);
-                                                setShowMenu(false);
-                                            }}
-                                            className="w-full px-4 py-2 text-left text-[#01AA85] hover:bg-gray-100 flex items-center gap-2"
-                                        >
-                                            <RiUserFollowFill size={20} />
-                                            Unblock User
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => {
-                                                setShowBlockModal(true);
-                                                setShowMenu(false);
-                                            }}
-                                            className="w-full px-4 py-2 text-left text-red-500 hover:bg-gray-100 flex items-center gap-2"
-                                        >
-                                            <RiUserUnfollowFill size={20} />
-                                            Block User
-                                        </button>
-                                    )}
-                                </div>
+                        <div className="flex items-center gap-2">
+                            {unreadCount > 0 && (
+                                <span className="bg-[#01AA85] text-white text-xs px-2 py-1 rounded-full">
+                                    {unreadCount} new
+                                </span>
                             )}
+                            <div className="relative" ref={menuRef}>
+                                <RiMore2Fill 
+                                    className="text-[#2A3D39] cursor-pointer" 
+                                    size={24} 
+                                    onClick={() => setShowMenu(!showMenu)} 
+                                />
+                                {showMenu && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-2 z-10">
+                                        {isBlocked ? (
+                                            <button
+                                                onClick={() => {
+                                                    setShowUnblockModal(true);
+                                                    setShowMenu(false);
+                                                }}
+                                                className="w-full px-4 py-2 text-left text-[#01AA85] hover:bg-gray-100 flex items-center gap-2"
+                                            >
+                                                <RiUserFollowFill size={20} />
+                                                Unblock User
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => {
+                                                    setShowBlockModal(true);
+                                                    setShowMenu(false);
+                                                }}
+                                                className="w-full px-4 py-2 text-left text-red-500 hover:bg-gray-100 flex items-center gap-2"
+                                            >
+                                                <RiUserUnfollowFill size={20} />
+                                                Block User
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </header>
 
@@ -307,21 +460,18 @@ const ChatBox = ({ selectedUser }) => {
                                         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-center max-w-md">
                                             You have blocked this user. You cannot send or receive messages from them.
                                         </div>
-                                    </div>
-                                )}
-                                {messages.map((msg) => (
-                                    <div 
-                                        key={msg.id}
-                                        className={`flex ${msg.senderId === currentUser.uid ? 'justify-end' : 'justify-start'} mb-4`}
-                                    >
-                                        <div className={`max-w-[70%] ${msg.senderId === currentUser.uid ? 'bg-[#01AA85] text-white' : 'bg-white'} rounded-lg p-3 shadow-sm`}>
-                                            {renderMessageContent(msg)}
-                                            <p className="text-xs mt-1 opacity-70">
-                                                {new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </p>
+                                                                </div>
+                                                            )}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    {messages.map((message) => (
+                                        <div
+                                            key={message.id}
+                                            className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
+                                        >
+                                            {renderMessageContent(message)}
                                         </div>
-                                    </div>
                                 ))}
+                                </div>
                             </div>
                         </section>
                         <div className="sticky lg:bottom-0 bottom-[60px] p-3 h-fit w-[100%]">
@@ -394,6 +544,15 @@ const ChatBox = ({ selectedUser }) => {
                         title="Unblock User"
                         message={`Are you sure you want to unblock ${selectedUser?.name}? You will be able to send and receive messages from this user again.`}
                     />
+
+                    {contextMenu && (
+                        <MessageContextMenu
+                            message={contextMenu.message}
+                            position={contextMenu.position}
+                            onClose={handleContextMenuClose}
+                            onMessageUpdate={updateMessageInState}
+                        />
+                    )}
                 </section>
             ) : (
                 <section className="flex flex-col h-screen flex-1">

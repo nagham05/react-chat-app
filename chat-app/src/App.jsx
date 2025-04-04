@@ -6,6 +6,7 @@ import ChatBox from "./components/ChatBox";
 import Login from "./components/Login";
 import Register from "./components/Register";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import ResetPassword from './components/ResetPassword';
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -25,6 +26,7 @@ const App = () => {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           
           <Route
             path="/chat"

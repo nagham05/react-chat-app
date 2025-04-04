@@ -4,7 +4,9 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  updateProfile
 } from 'firebase/auth';
 import { 
   doc, 
@@ -19,7 +21,8 @@ import {
   limit,
   startAfter,
   serverTimestamp,
-  deleteDoc
+  deleteDoc,
+  updateDoc
 } from 'firebase/firestore';
 import supabase from '../supabase';
 
@@ -32,6 +35,7 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Sign up function
   async function signup(email, password, name) {
@@ -221,6 +225,193 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Reset password function
+  const resetPassword = async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return true;
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      throw error;
+    }
+  };
+
+  // Edit message
+  const editMessage = async (messageId, newContent) => {
+    try {
+      if (!messageId) {
+        throw new Error('Message ID is required');
+      }
+
+      // Get the message document first
+      const messageRef = doc(db, 'Messages', messageId);
+      const messageDoc = await getDoc(messageRef);
+      
+      if (!messageDoc.exists()) {
+        throw new Error('Message not found');
+      }
+
+      // Update the message content and add edited flag
+      await updateDoc(messageRef, {
+        content: newContent,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error editing message:', error);
+      throw error;
+    }
+  };
+
+  // Delete message
+  const deleteMessage = async (messageId) => {
+    try {
+      console.log('deleteMessage called with ID:', messageId);
+      if (!messageId) {
+        throw new Error('Message ID is required');
+      }
+
+      // Get the message document first
+      const messageRef = doc(db, 'Messages', messageId);
+      console.log('Fetching message document...');
+      const messageDoc = await getDoc(messageRef);
+      
+      if (!messageDoc.exists()) {
+        console.error('Message document not found');
+        throw new Error('Message not found');
+      }
+
+      const messageData = messageDoc.data();
+      console.log('Message data:', messageData);
+
+      // Delete associated files from Supabase storage based on message type
+      if ((messageData.type === 'image' || messageData.type === 'file') && messageData.content) {
+        try {
+          console.log('Attempting to delete file from storage...');
+          // Get the full path from the content URL
+          const urlParts = messageData.content.split('/');
+          const fileName = urlParts[urlParts.length - 1];
+          const folder = messageData.type === 'image' ? 'chat-images' : 'chat-files';
+          const filePath = `${folder}/${fileName}`;
+          console.log('File path to delete:', filePath);
+
+          const { error } = await supabase.storage
+            .from('chat-app')
+            .remove([filePath]);
+          
+          if (error) {
+            console.error(`Error deleting ${messageData.type} from storage:`, error);
+          } else {
+            console.log('File deleted from storage successfully');
+          }
+        } catch (storageError) {
+          console.error(`Error deleting ${messageData.type} from storage:`, storageError);
+        }
+      }
+
+      // Delete the message document from Firestore
+      console.log('Deleting message document from Firestore...');
+      await deleteDoc(messageRef);
+      console.log('Message document deleted successfully');
+    } catch (error) {
+      console.error('Error in deleteMessage:', error);
+      throw error;
+    }
+  };
+
+  // Add reaction to message
+  const addReaction = async (messageId, reaction) => {
+    try {
+      const messageRef = doc(db, 'Messages', messageId);
+      const messageDoc = await getDoc(messageRef);
+      const currentReactions = messageDoc.data().reactions || {};
+
+      // Update or add reaction
+      const updatedReactions = {
+        ...currentReactions,
+        [reaction]: (currentReactions[reaction] || 0) + 1
+      };
+
+      await updateDoc(messageRef, {
+        reactions: updatedReactions
+      });
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+      throw error;
+    }
+  };
+
+  // Remove reaction from message
+  const removeReaction = async (messageId, reaction) => {
+    try {
+      if (!messageId) {
+        throw new Error('Message ID is required');
+      }
+
+      // Get the message document first
+      const messageRef = doc(db, 'Messages', messageId);
+      const messageDoc = await getDoc(messageRef);
+      
+      if (!messageDoc.exists()) {
+        throw new Error('Message not found');
+      }
+
+      const messageData = messageDoc.data();
+      const currentReactions = messageData.reactions || {};
+      
+      // Create a copy of current reactions and remove the specified reaction
+      const updatedReactions = { ...currentReactions };
+      if (updatedReactions[reaction]) {
+        if (updatedReactions[reaction] > 1) {
+          updatedReactions[reaction] -= 1;
+        } else {
+          delete updatedReactions[reaction];
+        }
+      }
+
+      // Update the message with the new reactions
+      await updateDoc(messageRef, {
+        reactions: updatedReactions
+      });
+    } catch (error) {
+      console.error('Error removing reaction:', error);
+      throw error;
+    }
+  };
+
+  const markMessageAsRead = async (messageId) => {
+    try {
+      if (!messageId) {
+        throw new Error('Message ID is required');
+      }
+
+      const messageRef = doc(db, 'Messages', messageId);
+      await updateDoc(messageRef, {
+        read: true,
+        readAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error marking message as read:', error);
+      throw error;
+    }
+  };
+
+  const getUnreadCount = async (userId) => {
+    try {
+      const messagesRef = collection(db, 'Messages');
+      const q = query(
+        messagesRef,
+        where('receiverId', '==', userId),
+        where('read', '==', false)
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.size;
+    } catch (error) {
+      console.error('Error getting unread count:', error);
+      return 0;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -239,16 +430,26 @@ export function AuthProvider({ children }) {
 
   const value = {
     currentUser,
+    loading,
+    error,
     signup,
     login,
     logout,
+    resetPassword,
+    updateProfile,
     uploadProfilePicture,
     uploadFile,
     sendMessage,
     getMessages,
     blockUser,
     unblockUser,
-    isUserBlocked
+    isUserBlocked,
+    editMessage,
+    deleteMessage,
+    addReaction,
+    removeReaction,
+    markMessageAsRead,
+    getUnreadCount
   };
 
   return (
