@@ -5,6 +5,7 @@ import SearchModal from "./SearchModal";
 import { useAuth } from "../context/AuthContext";
 import { collection, query, where, getDocs, onSnapshot, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
+import EditProfile from './EditProfile';
 
 const ChatList = ({ setSelectedUser }) => {
   const { currentUser } = useAuth();
@@ -12,6 +13,7 @@ const ChatList = ({ setSelectedUser }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [indexError, setIndexError] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -168,7 +170,10 @@ const ChatList = ({ setSelectedUser }) => {
             <p className="p-0 font-light text-[#2A3D39] text-[15px]">{currentUser?.email}</p>
           </span>
         </main>
-        <button className="bg-[#D9F2ED] w-[35px] h-[35px] p-2 flex items-center justify-center rounded-lg">
+        <button 
+          className="bg-[#D9F2ED] w-[35px] h-[35px] p-2 flex items-center justify-center rounded-lg"
+          onClick={() => setShowEditProfile(true)}
+        >
           <RiMore2Fill color="#01AA85" className="w-[28px] h-[28px]" />
         </button>
       </header>
@@ -219,6 +224,10 @@ const ChatList = ({ setSelectedUser }) => {
           ))
         )}
       </main>
+
+      {showEditProfile && (
+        <EditProfile onClose={() => setShowEditProfile(false)} />
+      )}
     </section>
   );
 };

@@ -412,6 +412,31 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const updateUserProfile = async (profileData) => {
+    try {
+      if (!currentUser) {
+        throw new Error('No user logged in');
+      }
+
+      const userRef = doc(db, 'Users', currentUser.uid);
+      await updateDoc(userRef, {
+        name: profileData.name,
+        bio: profileData.bio,
+        profile_pic: profileData.profile_pic,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update local user state
+      setCurrentUser(prev => ({
+        ...prev,
+        ...profileData
+      }));
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -449,7 +474,8 @@ export function AuthProvider({ children }) {
     addReaction,
     removeReaction,
     markMessageAsRead,
-    getUnreadCount
+    getUnreadCount,
+    updateUserProfile
   };
 
   return (
