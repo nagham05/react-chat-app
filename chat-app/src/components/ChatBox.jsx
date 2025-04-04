@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import defaultAvatar from "../assets/defaultavatar.png";
-import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfollowFill, RiUserFollowFill, RiEmotionLine } from "react-icons/ri";
+import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfollowFill, RiUserFollowFill, RiEmotionLine, RiImageLine, RiFileLine } from "react-icons/ri";
 import logo from "../assets/logo.png";
 import { useAuth } from "../context/AuthContext";
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
@@ -22,6 +22,9 @@ const ChatBox = ({ selectedUser }) => {
     const [isBlocked, setIsBlocked] = useState(false);
     const [blockStatus, setBlockStatus] = useState(null);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [showContactDetails, setShowContactDetails] = useState(false);
+    const [sharedMedia, setSharedMedia] = useState([]);
+    const [selectedMedia, setSelectedMedia] = useState(null);
     const scrollRef = useRef(null);
     const fileInputRef = useRef(null);
     const menuRef = useRef(null);
@@ -403,12 +406,40 @@ const ChatBox = ({ selectedUser }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Extract shared media from messages
+    useEffect(() => {
+        if (!messages.length) return;
+        
+        const mediaMessages = messages.filter(msg => 
+            msg.type === 'image' || msg.type === 'file'
+        );
+        
+        setSharedMedia(mediaMessages);
+    }, [messages]);
+
+    const handleMediaClick = (media) => {
+        if (media.type === 'file') {
+            // Open file directly in a new tab
+            window.open(media.content, '_blank');
+        } else {
+            // For images, show in the modal
+            setSelectedMedia(media);
+        }
+    };
+
+    const closeMediaViewer = () => {
+        setSelectedMedia(null);
+    };
+
     return (
         <>
             {selectedUser ? (
                 <section className="flex flex-col items-start justify-start h-screen flex-1 background-image">
                     <header className="w-full h-[82px] m:h-fit p-4 bg-white flex items-center justify-between">
-                        <main className="flex items-center gap-3">
+                        <main 
+                            className="flex items-center gap-3 cursor-pointer"
+                            onClick={() => setShowContactDetails(true)}
+                        >
                             <span>
                                 <img 
                                     src={selectedUser?.profile_pic || defaultAvatar} 
@@ -469,21 +500,21 @@ const ChatBox = ({ selectedUser }) => {
                             <div ref={scrollRef} className="overflow-auto h-[80vh] scrollbar-hide">
                                 {isBlocked && (
                                     <div className="flex justify-center mb-4">
-                                        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-center max-w-md">
-                                            You have blocked this user. You cannot send or receive messages from them.
+                                        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-center">
+                                            {blockStatus === 'blocked' 
+                                                ? "You have blocked this user. You cannot send or receive messages from them."
+                                                : "This user has blocked you. You cannot send or receive messages from them."}
                                         </div>
                                     </div>
                                 )}
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                    {messages.map((message) => (
-                                        <div
-                                            key={message.id}
-                                            className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
-                                        >
-                                            {renderMessageContent(message)}
-                                        </div>
-                                    ))}
-                                </div>
+                                {messages.map((message) => (
+                                    <div
+                                        key={message.id}
+                                        className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
+                                    >
+                                        {renderMessageContent(message)}
+                                    </div>
+                                ))}
                             </div>
                         </section>
                         <div className="sticky lg:bottom-0 bottom-[60px] p-3 h-fit w-[100%]">
@@ -557,12 +588,125 @@ const ChatBox = ({ selectedUser }) => {
                         </div>
                     </main>
 
+                    {/* Contact Details and Shared Media Section */}
+                    {showContactDetails && (
+                        <div className="fixed inset-0  flex">
+                            {/* Overlay to dim the background */}
+                            <div className="absolute inset-0  bg-opacity-20" onClick={() => setShowContactDetails(false)}></div>
+                            
+                            {/* Contact Details Panel */}
+                            <div className="absolute right-0 top-0 h-full w-80 bg-white shadow-lg z-10">
+                                <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h2 className="text-lg font-semibold text-[#2A3D39]">Contact Details</h2>
+                                    <button 
+                                        onClick={() => setShowContactDetails(false)}
+                                        className="text-gray-500 hover:text-gray-700"
+                                    >
+                                        <RiCloseFill size={24} />
+                                    </button>
+                                </div>
+                                
+                                <div className="p-4 flex flex-col items-center border-b border-gray-200">
+                                    <img 
+                                        src={selectedUser?.profile_pic || defaultAvatar} 
+                                        className="w-24 h-24 object-cover rounded-full mb-3" 
+                                        alt={selectedUser?.name} 
+                                    />
+                                    <h3 className="text-xl font-semibold text-[#2A3D39]">{selectedUser?.name}</h3>
+                                    <p className="text-gray-600">{selectedUser?.email}</p>
+                                    {selectedUser?.bio && (
+                                        <p className="mt-2 text-gray-700 text-center">{selectedUser.bio}</p>
+                                    )}
+                                </div>
+                                
+                                <div className="flex-1 overflow-auto">
+                                    <div className="p-4">
+                                        <h3 className="text-lg font-semibold text-[#2A3D39] mb-3">Shared Media</h3>
+                                        {sharedMedia.length === 0 ? (
+                                            <p className="text-gray-500 text-center">No shared media yet</p>
+                                        ) : (
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {sharedMedia.map((media) => (
+                                                    <div 
+                                                        key={media.id} 
+                                                        className="flex flex-col"
+                                                    >
+                                                        <div 
+                                                            className="aspect-square rounded-md overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                                                            onClick={() => handleMediaClick(media)}
+                                                        >
+                                                            {media.type === 'image' ? (
+                                                                <img 
+                                                                    src={media.content} 
+                                                                    alt="Shared image" 
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                                                                    <RiFileLine size={24} className="text-gray-500" />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {media.type === 'file' && (
+                                                            <p className="text-xs text-gray-600 mt-1 truncate" title={media.fileName || 'File'}>
+                                                                {media.fileName || 'File'}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Media Viewer Modal */}
+                    {selectedMedia && (
+                        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-[#D9F2ED] bg-opacity-20 backdrop-blur-sm">
+                            <div className="relative max-w-4xl max-h-[90vh] w-full mx-4">
+                                <button 
+                                    onClick={closeMediaViewer}
+                                    className="absolute top-2 right-2 text-gray-700 bg-white bg-opacity-80 rounded-full p-2 hover:bg-opacity-100 z-10 shadow-md"
+                                >
+                                    <RiCloseFill size={24} />
+                                </button>
+                                
+                                {selectedMedia.type === 'image' ? (
+                                    <img 
+                                        src={selectedMedia.content} 
+                                        alt="Shared image" 
+                                        className="max-h-[90vh] w-auto mx-auto object-contain rounded-lg shadow-xl"
+                                    />
+                                ) : (
+                                    <div className="bg-white p-8 rounded-lg text-center shadow-xl">
+                                        <div className="mb-4">
+                                            <RiFileLine size={48} className="text-gray-500 mx-auto" />
+                                        </div>
+                                        <h3 className="text-xl font-semibold mb-2">{selectedMedia.fileName || 'File'}</h3>
+                                        <a 
+                                            href={selectedMedia.content} 
+                                            download
+                                            className="inline-block mt-4 px-4 py-2 bg-[#01AA85] text-white rounded-lg hover:bg-[#018a6d] transition-colors"
+                                        >
+                                            Download File
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     <ConfirmationModal
                         isOpen={showBlockModal}
                         onClose={() => setShowBlockModal(false)}
                         onConfirm={handleBlockUser}
                         title="Block User"
-                        message={`Are you sure you want to block ${selectedUser?.name}? You won't be able to send or receive messages from this user.`}
+                        message={`Are you sure you want to block ${selectedUser?.name}? You won't be able to send or receive messages from them.`}
+                        confirmText="Block"
+                        cancelText="Cancel"
+                        confirmButtonClass="bg-red-500 hover:bg-red-600"
                     />
 
                     <ConfirmationModal
@@ -570,25 +714,27 @@ const ChatBox = ({ selectedUser }) => {
                         onClose={() => setShowUnblockModal(false)}
                         onConfirm={handleUnblockUser}
                         title="Unblock User"
-                        message={`Are you sure you want to unblock ${selectedUser?.name}? You will be able to send and receive messages from this user again.`}
+                        message={`Are you sure you want to unblock ${selectedUser?.name}? You will be able to send and receive messages from them again.`}
+                        confirmText="Unblock"
+                        cancelText="Cancel"
+                        confirmButtonClass="bg-[#01AA85] hover:bg-[#018a6d]"
                     />
 
                     {contextMenu && (
                         <MessageContextMenu
-                            message={contextMenu.message}
                             position={contextMenu.position}
-                            onClose={handleContextMenuClose}
-                            onMessageUpdate={updateMessageInState}
+                            message={contextMenu.message}
+                            onClose={() => setContextMenu(null)}
+                            onDelete={handleDeleteMessage}
+                            onReact={handleReactToMessage}
                         />
                     )}
                 </section>
             ) : (
-                <section className="flex flex-col h-screen flex-1">
-                    <div className="flex flex-col justify-center items-center h-screen">
-                        <img src={logo} alt="" width={100} />
-                        <h1 className="text-[30px] font-bold text-teal-700 mt-5">Welcome to Chatterly</h1>
-                        <p className="text-gray-500">Connect and chat with friends easily, securely, and fast</p>
-                    </div>
+                <section className="flex flex-col items-center justify-center h-screen flex-1 background-image">
+                    <img src={logo} alt="Logo" className="w-32 h-32 mb-4" />
+                    <h2 className="text-2xl font-semibold text-[#2A3D39]">Welcome to Chatterly</h2>
+                    <p className="text-gray-600 mt-2">Select a chat to start messaging</p>
                 </section>
             )}
         </>
