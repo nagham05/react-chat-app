@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import defaultAvatar from "../assets/defaultavatar.png";
-import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfollowFill, RiUserFollowFill, RiEmotionLine, RiImageLine, RiFileLine } from "react-icons/ri";
+import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfollowFill, RiUserFollowFill, RiEmotionLine, RiImageLine, RiFileLine, RiSearchLine } from "react-icons/ri";
 import logo from "../assets/logo.png";
 import { useAuth } from "../context/AuthContext";
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
@@ -25,6 +25,10 @@ const ChatBox = ({ selectedUser }) => {
     const [showContactDetails, setShowContactDetails] = useState(false);
     const [sharedMedia, setSharedMedia] = useState([]);
     const [selectedMedia, setSelectedMedia] = useState(null);
+    const [showSearch, setShowSearch] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState([]);
+    const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
     const scrollRef = useRef(null);
     const fileInputRef = useRef(null);
     const menuRef = useRef(null);
@@ -235,6 +239,66 @@ const ChatBox = ({ selectedUser }) => {
         markMessagesAsRead();
     }, [messages, selectedUser, currentUser]);
 
+    const handleSearch = () => {
+        if (!searchQuery.trim()) {
+            setSearchResults([]);
+            setCurrentSearchIndex(-1);
+            return;
+        }
+
+        const results = messages.filter(message => 
+            message.type === 'text' && 
+            message.content.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        
+        setSearchResults(results);
+        setCurrentSearchIndex(results.length > 0 ? 0 : -1);
+        
+        if (results.length > 0) {
+            // Scroll to the first result
+            const messageElement = document.getElementById(`message-${results[0].id}`);
+            if (messageElement) {
+                messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                messageElement.classList.add('highlight');
+                setTimeout(() => {
+                    messageElement.classList.remove('highlight');
+                }, 2000);
+            }
+        }
+    };
+
+    const navigateSearchResults = (direction) => {
+        if (searchResults.length === 0) return;
+        
+        // Remove highlight from current result
+        if (currentSearchIndex >= 0) {
+            const currentElement = document.getElementById(`message-${searchResults[currentSearchIndex].id}`);
+            if (currentElement) {
+                currentElement.classList.remove('highlight');
+            }
+        }
+        
+        // Calculate new index
+        let newIndex;
+        if (direction === 'next') {
+            newIndex = (currentSearchIndex + 1) % searchResults.length;
+        } else {
+            newIndex = currentSearchIndex <= 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+        }
+        
+        setCurrentSearchIndex(newIndex);
+        
+        // Highlight and scroll to new result
+        const messageElement = document.getElementById(`message-${searchResults[newIndex].id}`);
+        if (messageElement) {
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            messageElement.classList.add('highlight');
+            setTimeout(() => {
+                messageElement.classList.remove('highlight');
+            }, 2000);
+        }
+    };
+
     const renderMessageContent = (message) => {
         // Don't render deleted messages
         if (message.deleted) return null;
@@ -247,14 +311,17 @@ const ChatBox = ({ selectedUser }) => {
 
         const isMessageRead = message.read && message.readAt;
         const showReadReceipt = message.senderId === currentUser.uid;
+        const isSearchResult = searchResults.some(result => result.id === message.id);
+        const isCurrentResult = currentSearchIndex >= 0 && searchResults[currentSearchIndex]?.id === message.id;
 
         return (
             <div
+                id={`message-${message.id}`}
                 className={`p-3 rounded-lg max-w-[70%] ${
                     message.senderId === currentUser.uid
                         ? 'bg-[#01AA85] text-white ml-auto'
                         : 'bg-gray-100 text-gray-800'
-                }`}
+                } ${isSearchResult ? 'border-2 border-yellow-400' : ''} ${isCurrentResult ? 'highlight' : ''}`}
                 onDoubleClick={(e) => handleMessageDoubleClick(e, message)}
             >
                 {message.type === 'text' && (
@@ -458,6 +525,12 @@ const ChatBox = ({ selectedUser }) => {
                                     {unreadCount} new
                                 </span>
                             )}
+                            <button 
+                                onClick={() => setShowSearch(!showSearch)}
+                                className="text-[#2A3D39] hover:text-[#01AA85] transition-colors"
+                            >
+                                <RiSearchLine size={24} />
+                            </button>
                             <div className="relative" ref={menuRef}>
                                 <RiMore2Fill 
                                     className="text-[#2A3D39] cursor-pointer" 
@@ -494,6 +567,56 @@ const ChatBox = ({ selectedUser }) => {
                             </div>
                         </div>
                     </header>
+
+                    {/* Search Bar */}
+                    {showSearch && (
+                        <div className="w-full bg-white p-3 border-b border-gray-200 flex items-center gap-2">
+                            <div className="relative flex-1">
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleSearch();
+                                        }
+                                    }}
+                                    placeholder="Search in messages..."
+                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85] focus:border-transparent"
+                                />
+                                <RiSearchLine className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                            </div>
+                            {searchResults.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-gray-600">
+                                        {currentSearchIndex + 1} of {searchResults.length}
+                                    </span>
+                                    <button 
+                                        onClick={() => navigateSearchResults('prev')}
+                                        className="p-1 rounded-full hover:bg-gray-100"
+                                    >
+                                        ↑
+                                    </button>
+                                    <button 
+                                        onClick={() => navigateSearchResults('next')}
+                                        className="p-1 rounded-full hover:bg-gray-100"
+                                    >
+                                        ↓
+                                    </button>
+                                </div>
+                            )}
+                            <button 
+                                onClick={() => {
+                                    setShowSearch(false);
+                                    setSearchQuery("");
+                                    setSearchResults([]);
+                                }}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <RiCloseFill size={24} />
+                            </button>
+                        </div>
+                    )}
 
                     <main className="custom-scrollbar relative h-[100vh] w-[100%] flex flex-col justify-between">
                         <section className="px-3 pt-5 b-20 lg:pb-10">
