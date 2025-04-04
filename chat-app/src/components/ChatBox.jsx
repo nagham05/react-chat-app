@@ -507,14 +507,16 @@ const ChatBox = ({ selectedUser }) => {
                                         </div>
                                     </div>
                                 )}
-                                {messages.map((message) => (
-                                    <div
-                                        key={message.id}
-                                        className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
-                                    >
-                                        {renderMessageContent(message)}
-                                    </div>
-                                ))}
+                                <div className="space-y-3">
+                                    {messages.map((message) => (
+                                        <div
+                                            key={message.id}
+                                            className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
+                                        >
+                                            {renderMessageContent(message)}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </section>
                         <div className="sticky lg:bottom-0 bottom-[60px] p-3 h-fit w-[100%]">
