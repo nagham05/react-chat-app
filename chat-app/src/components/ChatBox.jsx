@@ -498,6 +498,35 @@ const ChatBox = ({ selectedUser }) => {
         setSelectedMedia(null);
     };
 
+    const handleDeleteMessage = async (messageId) => {
+        try {
+            // Get the current deletedMessageIds from localStorage
+            const storedDeletedIds = JSON.parse(localStorage.getItem('deletedMessageIds') || '[]');
+            
+            // Add the new message ID to the array if it's not already there
+            if (!storedDeletedIds.includes(messageId)) {
+                const updatedDeletedIds = [...storedDeletedIds, messageId];
+                localStorage.setItem('deletedMessageIds', JSON.stringify(updatedDeletedIds));
+                
+                // Update the state to reflect the change
+                setMessages(prevMessages => 
+                    prevMessages.map(msg => 
+                        msg.id === messageId ? { ...msg, deleted: true } : msg
+                    )
+                );
+                
+                console.log(`Message ${messageId} marked as deleted`);
+            }
+        } catch (error) {
+            console.error('Error deleting message:', error);
+        }
+    };
+
+    const handleReactToMessage = (messageId, reaction) => {
+        // This function will be implemented later for message reactions
+        console.log(`Reacting to message ${messageId} with ${reaction}`);
+    };
+
     return (
         <>
             {selectedUser ? (
