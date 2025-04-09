@@ -321,23 +321,62 @@ export function AuthProvider({ children }) {
 
   // Add reaction to message
   const addReaction = async (messageId, reaction) => {
+    if (!currentUser) return;
+    
     try {
+      setLoading(true);
       const messageRef = doc(db, 'Messages', messageId);
       const messageDoc = await getDoc(messageRef);
-      const currentReactions = messageDoc.data().reactions || {};
+      
+      if (!messageDoc.exists()) {
+        throw new Error('Message not found');
+      }
 
-      // Update or add reaction
-      const updatedReactions = {
-        ...currentReactions,
-        [reaction]: (currentReactions[reaction] || 0) + 1
-      };
+      const messageData = messageDoc.data();
+      const currentReactions = messageData.reactions || {};
+      
+      // Handle old format where reactions are stored as numbers
+      if (typeof currentReactions[reaction] === 'number') {
+        // Convert old format to new format
+        currentReactions[reaction] = {
+          users: [currentUser.uid]
+        };
+      } else {
+        // Initialize the reaction structure if it doesn't exist
+        if (!currentReactions[reaction]) {
+          currentReactions[reaction] = { users: [] };
+        }
 
-      await updateDoc(messageRef, {
-        reactions: updatedReactions
-      });
+        // Ensure the users array exists
+        if (!currentReactions[reaction].users) {
+          currentReactions[reaction].users = [];
+        }
+
+        // Check if user has already reacted with this emoji
+        const hasReacted = currentReactions[reaction].users.includes(currentUser.uid);
+        
+        if (hasReacted) {
+          // Remove the reaction if user already reacted
+          currentReactions[reaction].users = currentReactions[reaction].users.filter(
+            uid => uid !== currentUser.uid
+          );
+          
+          // Remove the reaction if no users have reacted
+          if (currentReactions[reaction].users.length === 0) {
+            delete currentReactions[reaction];
+          }
+        } else {
+          // Add the user's reaction
+          currentReactions[reaction].users.push(currentUser.uid);
+        }
+      }
+
+      await updateDoc(messageRef, { reactions: currentReactions });
     } catch (error) {
       console.error('Error adding reaction:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -359,20 +398,23 @@ export function AuthProvider({ children }) {
       const messageData = messageDoc.data();
       const currentReactions = messageData.reactions || {};
       
-      // Create a copy of current reactions and remove the specified reaction
-      const updatedReactions = { ...currentReactions };
-      if (updatedReactions[reaction]) {
-        if (updatedReactions[reaction] > 1) {
-          updatedReactions[reaction] -= 1;
-        } else {
-          delete updatedReactions[reaction];
+      // Check if the reaction exists and has users array
+      if (currentReactions[reaction]?.users?.includes(currentUser.uid)) {
+        // Remove the user's reaction
+        currentReactions[reaction].users = currentReactions[reaction].users.filter(
+          id => id !== currentUser.uid
+        );
+        
+        // If no one has reacted with this emoji anymore, remove it
+        if (currentReactions[reaction].users.length === 0) {
+          delete currentReactions[reaction];
         }
+        
+        // Update the message with the new reactions
+        await updateDoc(messageRef, {
+          reactions: currentReactions
+        });
       }
-
-      // Update the message with the new reactions
-      await updateDoc(messageRef, {
-        reactions: updatedReactions
-      });
     } catch (error) {
       console.error('Error removing reaction:', error);
       throw error;

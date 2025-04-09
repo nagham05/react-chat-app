@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useGroup } from '../context/GroupContext';
 import { RiEditLine, RiDeleteBinLine, RiEmotionLine } from 'react-icons/ri';
 import ConfirmationModal from './ConfirmationModal';
 
 const reactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
-const MessageContextMenu = ({ message, onClose, position, onMessageUpdate }) => {
+const MessageContextMenu = ({ message, onClose, position, onMessageUpdate, isGroupChat, groupId }) => {
     const { currentUser, editMessage, deleteMessage, addReaction, removeReaction } = useAuth();
+    const { editGroupMessage, deleteGroupMessage, addGroupReaction, removeGroupReaction } = useGroup();
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState(message.content);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -38,7 +40,12 @@ const MessageContextMenu = ({ message, onClose, position, onMessageUpdate }) => 
                 return;
             }
 
-            await editMessage(message.id, editedContent);
+            if (isGroupChat) {
+                await editGroupMessage(groupId, message.id, editedContent);
+            } else {
+                await editMessage(message.id, editedContent);
+            }
+            
             onMessageUpdate(message.id, {
                 content: editedContent,
                 edited: true
@@ -59,7 +66,11 @@ const MessageContextMenu = ({ message, onClose, position, onMessageUpdate }) => 
             }
             
             console.log('Calling deleteMessage with ID:', message.id);
-            await deleteMessage(message.id);
+            if (isGroupChat) {
+                await deleteGroupMessage(groupId, message.id);
+            } else {
+                await deleteMessage(message.id);
+            }
             console.log('Message deleted successfully');
             
             console.log('Updating UI state for message:', message.id);
@@ -77,10 +88,18 @@ const MessageContextMenu = ({ message, onClose, position, onMessageUpdate }) => 
             let updatedReactions = { ...currentReactions };
             
             if (currentReactions[reaction]) {
-                await removeReaction(message.id, reaction);
+                if (isGroupChat) {
+                    await removeGroupReaction(groupId, message.id, reaction);
+                } else {
+                    await removeReaction(message.id, reaction);
+                }
                 delete updatedReactions[reaction];
             } else {
-                await addReaction(message.id, reaction);
+                if (isGroupChat) {
+                    await addGroupReaction(groupId, message.id, reaction);
+                } else {
+                    await addReaction(message.id, reaction);
+                }
                 updatedReactions[reaction] = (currentReactions[reaction] || 0) + 1;
             }
             
