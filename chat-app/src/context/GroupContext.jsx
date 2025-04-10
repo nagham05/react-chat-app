@@ -66,7 +66,9 @@ export function GroupProvider({ children }) {
           if (!messagesSnapshot.empty) {
             const lastMessage = messagesSnapshot.docs[0].data();
             groupData.lastMessage = lastMessage.content;
-            groupData.lastMessageTime = lastMessage.sentAt;
+            groupData.lastMessageTime = lastMessage.sentAt?.toDate 
+              ? lastMessage.sentAt.toDate() 
+              : lastMessage.sentAt;
             groupData.lastMessageType = lastMessage.type;
             groupData.lastMessageSender = lastMessage.senderName;
           }
@@ -125,7 +127,9 @@ export function GroupProvider({ children }) {
             if (!messagesSnapshot.empty) {
               const lastMessage = messagesSnapshot.docs[0].data();
               groupData.lastMessage = lastMessage.content;
-              groupData.lastMessageTime = lastMessage.sentAt;
+              groupData.lastMessageTime = lastMessage.sentAt?.toDate 
+                ? lastMessage.sentAt.toDate() 
+                : lastMessage.sentAt;
               groupData.lastMessageType = lastMessage.type;
               groupData.lastMessageSender = lastMessage.senderName;
             }
@@ -493,10 +497,11 @@ export function GroupProvider({ children }) {
       // Add the message to the group's Messages subcollection
       const messageRef = await addDoc(collection(db, 'Groups', groupId, 'Messages'), messageData);
       
-      // Update the group's last message
+      // Update the group's last message with a JavaScript Date object for proper sorting
+      const currentTime = new Date();
       await updateDoc(groupRef, {
         lastMessage: content,
-        lastMessageTime: serverTimestamp(),
+        lastMessageTime: currentTime,
         updatedAt: serverTimestamp()
       });
       

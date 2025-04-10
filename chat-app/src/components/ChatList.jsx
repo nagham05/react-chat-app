@@ -167,11 +167,18 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
 
     // Add group chats to the map
     groups.forEach(group => {
+      // Ensure lastMessageTime is a proper Date object for sorting
+      const lastMessageTime = group.lastMessageTime 
+        ? (group.lastMessageTime instanceof Date 
+            ? group.lastMessageTime 
+            : new Date(group.lastMessageTime))
+        : null;
+        
       uniqueChatsMap.set(`group_${group.id}`, {
         id: group.id,
         name: group.name,
         lastMessage: group.lastMessage || '',
-        lastMessageTime: group.lastMessageTime || null,
+        lastMessageTime: lastMessageTime,
         messageType: group.lastMessageType || 'text',
         isGroup: true,
         members: group.members,
@@ -182,7 +189,11 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
 
     // Convert map to array and sort by last message time
     return Array.from(uniqueChatsMap.values())
-      .sort((a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0));
+      .sort((a, b) => {
+        const timeA = a.lastMessageTime ? new Date(a.lastMessageTime) : new Date(0);
+        const timeB = b.lastMessageTime ? new Date(b.lastMessageTime) : new Date(0);
+        return timeB - timeA;
+      });
   }, [directChats, groups]);
 
   const handleCreateGroup = () => {
