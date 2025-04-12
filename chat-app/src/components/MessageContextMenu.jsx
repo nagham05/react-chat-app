@@ -46,10 +46,7 @@ const MessageContextMenu = ({ message, onClose, position, onMessageUpdate, isGro
                 await editMessage(message.id, editedContent);
             }
             
-            onMessageUpdate(message.id, {
-                content: editedContent,
-                edited: true
-            });
+            onMessageUpdate(message.id, editedContent);
             setIsEditing(false);
             onClose();
         } catch (error) {

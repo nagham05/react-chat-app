@@ -386,31 +386,52 @@ export function GroupProvider({ children }) {
         throw new Error('You are not a member of this group');
       }
       
-      // Check if the user is the creator
-      if (groupData.creator === currentUser.uid) {
+      // Check if the user is the creator of the group
+      if (groupData.createdBy === currentUser.uid) {
         throw new Error('Group creator cannot leave the group. You must delete the group instead.');
       }
       
-      // Update the group members
+      // Remove the user from the members array
       const updatedMembers = groupData.members.filter(memberId => memberId !== currentUser.uid);
       
-      // Also remove from admins if they were an admin
+      // Remove the user from the admins array if they are an admin
       const updatedAdmins = groupData.admins.filter(adminId => adminId !== currentUser.uid);
       
+      // Update the group document
       await updateDoc(groupRef, {
         members: updatedMembers,
         admins: updatedAdmins,
         updatedAt: serverTimestamp()
       });
       
-      // Add a system message
-      await addDoc(collection(db, 'Groups', groupId, 'Messages'), {
-        content: `${currentUser.name} left the group`,
-        senderId: currentUser.uid,
-        senderName: currentUser.name,
-        type: 'system',
-        sentAt: serverTimestamp()
-      });
+      // If this was the last message, update the group's last message
+      if (groupData.lastMessageSender === currentUser.displayName) {
+        // Get the new last message
+        const messagesRef = collection(db, 'Groups', groupId, 'Messages');
+        const q = query(messagesRef, where('type', '==', 'text'), orderBy('sentAt', 'desc'), limit(1));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const lastMessage = querySnapshot.docs[0].data();
+          await updateDoc(groupRef, {
+            lastMessage: lastMessage.content,
+            lastMessageTime: lastMessage.sentAt,
+            lastMessageSender: lastMessage.senderName,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          // No more messages
+          await updateDoc(groupRef, {
+            lastMessage: null,
+            lastMessageTime: null,
+            lastMessageSender: null,
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
+      
+      // Refresh the groups list
+      await getGroups();
       
       return true;
     } catch (err) {
@@ -958,7 +979,28 @@ export function GroupProvider({ children }) {
   };
 
   return (
-    <GroupContext.Provider value={value}>
+    <GroupContext.Provider
+      value={{
+        groups,
+        selectedGroup,
+        loading,
+        error,
+        indexError,
+        getGroups,
+        createGroup,
+        addMembers,
+        removeMembers,
+        leaveGroup,
+        deleteGroup,
+        sendGroupMessage,
+        getGroupMessages,
+        editGroupMessage,
+        deleteGroupMessage,
+        addGroupReaction,
+        removeGroupReaction,
+        setSelectedGroup,
+      }}
+    >
       {children}
     </GroupContext.Provider>
   );

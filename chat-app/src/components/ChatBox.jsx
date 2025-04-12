@@ -4,7 +4,7 @@ import { RiSendPlaneFill, RiImageAddFill, RiCloseFill, RiMore2Fill, RiUserUnfoll
 import logo from "../assets/logo.png";
 import { useAuth } from "../context/AuthContext";
 import { useGroup } from "../context/GroupContext";
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs, getDoc, doc } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs, getDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import supabase from "../supabase";
 import ConfirmationModal from "./ConfirmationModal";
@@ -12,9 +12,9 @@ import MessageContextMenu from './MessageContextMenu';
 import EmojiPicker from 'emoji-picker-react';
 import GroupModal from './GroupModal';
 
-const ChatBox = ({ selectedUser, selectedGroup }) => {
-    const { currentUser, sendMessage, uploadFile, blockUser, unblockUser, removeReaction, addReaction, markMessageAsRead, getUnreadCount } = useAuth();
-    const { sendGroupMessage, getGroupMessages, deleteGroupMessage, editGroupMessage, addGroupReaction, removeGroupReaction } = useGroup();
+const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
+    const { currentUser, sendMessage, uploadFile, blockUser, unblockUser, removeReaction, addReaction, markMessageAsRead, getUnreadCount, startChat } = useAuth();
+    const { sendGroupMessage, getGroupMessages, deleteGroupMessage, editGroupMessage, addGroupReaction, removeGroupReaction, leaveGroup } = useGroup();
     const [messages, setMessages] = useState([]);
     const [messageText, setMessageText] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
@@ -33,10 +33,15 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
     const [searchResults, setSearchResults] = useState([]);
     const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
     const [showGroupModal, setShowGroupModal] = useState(false);
+    const [showEditGroupModal, setShowEditGroupModal] = useState(false);
     const [groupMembers, setGroupMembers] = useState([]);
     const [showAllMembers, setShowAllMembers] = useState(false);
     const [showAllMedia, setShowAllMedia] = useState(false);
     const [showMediaModal, setShowMediaModal] = useState(false);
+    const [showMembersModal, setShowMembersModal] = useState(false);
+    const [memberSearchQuery, setMemberSearchQuery] = useState("");
+    const [selectedMember, setSelectedMember] = useState(null);
+    const [showChatConfirmation, setShowChatConfirmation] = useState(false);
     const scrollRef = useRef(null);
     const fileInputRef = useRef(null);
     const menuRef = useRef(null);
@@ -286,7 +291,7 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
     // Update unread count when messages change
     useEffect(() => {
         const updateUnreadCount = async () => {
-            if (selectedUser) {
+            if (selectedUser?.id) {
                 const count = await getUnreadCount(selectedUser.id);
                 setUnreadCount(count);
             }
@@ -297,7 +302,7 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
     // Mark messages as read when they are viewed
     useEffect(() => {
         const markMessagesAsRead = async () => {
-            if (!selectedUser || !currentUser) return;
+            if (!selectedUser?.id || !currentUser?.uid) return;
 
             const unreadMessages = messages.filter(
                 msg => msg.receiverId === currentUser.uid && !msg.read
@@ -486,7 +491,7 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
     // Update the block status check
     useEffect(() => {
         const checkBlockStatus = async () => {
-            if (!selectedUser) return;
+            if (!selectedUser?.id || !currentUser?.uid) return;
             
             try {
                 const blockedRef = collection(db, 'Blocked');
@@ -627,6 +632,64 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
     const handleReactToMessage = (messageId, reaction) => {
         // This function will be implemented later for message reactions
         console.log(`Reacting to message ${messageId} with ${reaction}`);
+    };
+
+    const handleMessageUpdate = async (messageId, newContent) => {
+        try {
+            if (selectedGroup) {
+                await editGroupMessage(selectedGroup.id, messageId, newContent);
+            } else if (selectedUser) {
+                // Handle direct message editing
+                const messagesRef = collection(db, 'Messages');
+                await updateDoc(doc(messagesRef, messageId), {
+                    content: newContent,
+                    edited: true,
+                    editedAt: serverTimestamp()
+                });
+            }
+            // Update the message in the local state
+            setMessages(prevMessages => 
+                prevMessages.map(msg => 
+                    msg.id === messageId 
+                        ? { ...msg, content: newContent, edited: true, editedAt: new Date() }
+                        : msg
+                )
+            );
+        } catch (error) {
+            console.error('Error updating message:', error);
+        }
+    };
+
+    const filteredMembers = useMemo(() => {
+        if (!memberSearchQuery) return groupMembers;
+        return groupMembers.filter(member => 
+            member.name.toLowerCase().includes(memberSearchQuery.toLowerCase())
+        );
+    }, [groupMembers, memberSearchQuery]);
+
+    const handleMemberClick = (member) => {
+        if (member.uid === currentUser.uid) return;
+        setSelectedMember(member);
+        setShowChatConfirmation(true);
+    };
+
+    const handleOpenChat = () => {
+        if (selectedMember) {
+            // Format the member data to match the expected user structure
+            const userData = {
+                id: selectedMember.uid,
+                name: selectedMember.name,
+                email: selectedMember.email,
+                profile_pic: selectedMember.profile_pic,
+                bio: selectedMember.bio
+            };
+            
+            // Close the members modal and confirmation modal
+            setShowMembersModal(false);
+            setShowChatConfirmation(false);
+            // Call the onSelectUser prop to open chat with the selected member
+            onSelectUser(userData);
+        }
     };
 
     return (
@@ -779,8 +842,8 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                                                 ? "You have blocked this user. You cannot send or receive messages from them."
                                                 : "This user has blocked you. You cannot send or receive messages from them."}
                                         </div>
-                                    </div>
-                                )}
+                                                            </div>
+                                                        )}
                                 <div className="space-y-3">
                                     {messages.map((message, index) => {
                                         // Check if this message is from a different day than the previous one
@@ -834,7 +897,7 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                                             </React.Fragment>
                                         );
                                     })}
-                                </div>
+                                        </div>
                             </div>
                         </section>
                         <div className="sticky lg:bottom-0 bottom-[60px] p-3 h-fit w-[100%]">
@@ -937,7 +1000,7 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                                             <div className="mt-4 w-full">
                                                 <h4 className="text-sm font-semibold text-[#2A3D39] mb-2">Group Members</h4>
                                                 <div className="max-h-40 overflow-y-auto">
-                                                    {groupMembers.slice(0, showAllMembers ? undefined : 3).map((member) => (
+                                                    {groupMembers.slice(0, 3).map((member) => (
                                                         <div key={member.uid} className="flex items-center py-1">
                                                             <img 
                                                                 src={member.profile_pic || defaultAvatar} 
@@ -952,20 +1015,12 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                                                             </span>
                                                         </div>
                                                     ))}
-                                                    {groupMembers.length > 3 && !showAllMembers && (
+                                                    {groupMembers.length > 3 && (
                                                         <button 
-                                                            onClick={() => setShowAllMembers(true)}
+                                                            onClick={() => setShowMembersModal(true)}
                                                             className="w-full text-center py-2 text-sm text-[#01AA85] hover:bg-gray-50 rounded-md mt-1"
                                                         >
                                                             Show All ({groupMembers.length} members)
-                                                        </button>
-                                                    )}
-                                                    {showAllMembers && (
-                                                        <button 
-                                                            onClick={() => setShowAllMembers(false)}
-                                                            className="w-full text-center py-2 text-sm text-[#01AA85] hover:bg-gray-50 rounded-md mt-1"
-                                                        >
-                                                            Show Less
                                                         </button>
                                                     )}
                                                 </div>
@@ -1038,6 +1093,22 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Leave Group Button */}
+                                {isGroupChat && !selectedGroup.creator && (
+                                    <div className="mt-4">
+                                        <button
+                                            onClick={() => {
+                                                if (window.confirm('Are you sure you want to leave this group?')) {
+                                                    leaveGroup(selectedGroup.id);
+                                                }
+                                            }}
+                                            className="w-full py-2 px-4 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
+                                        >
+                                            Leave Group
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1159,6 +1230,7 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                             onClose={() => setContextMenu(null)}
                             onDelete={handleDeleteMessage}
                             onReact={handleReactToMessage}
+                            onMessageUpdate={handleMessageUpdate}
                             isGroupChat={isGroupChat}
                             groupId={selectedGroup?.id}
                         />
@@ -1171,6 +1243,106 @@ const ChatBox = ({ selectedUser, selectedGroup }) => {
                             group={selectedGroup}
                             mode="edit"
                         />
+                    )}
+
+                    {/* Members Modal */}
+                    {showMembersModal && (
+                        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-[#D9F2ED] bg-opacity-20 backdrop-blur-sm">
+                            <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-xl">
+                                <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h2 className="text-lg font-semibold text-[#2A3D39]">Group Members</h2>
+                                    <button 
+                                        onClick={() => setShowMembersModal(false)}
+                                        className="text-gray-500 hover:text-gray-700"
+                                    >
+                                        <RiCloseFill size={24} />
+                                    </button>
+                                </div>
+                                <div className="p-4">
+                                    <div className="relative mb-4">
+                                        <input
+                                            type="text"
+                                            placeholder="Search members..."
+                                            value={memberSearchQuery}
+                                            onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85] focus:border-transparent"
+                                        />
+                                        <RiSearchLine className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                                    </div>
+                                    <div className="overflow-y-auto max-h-[60vh]">
+                                        <div className="space-y-2">
+                                            {filteredMembers.map((member) => (
+                                                <div 
+                                                    key={member.uid} 
+                                                    className="flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-md cursor-pointer"
+                                                    onClick={() => handleMemberClick(member)}
+                                                >
+                                                    <div className="flex items-center">
+                                                        <img 
+                                                            src={member.profile_pic || defaultAvatar} 
+                                                            className="w-8 h-8 rounded-full mr-2" 
+                                                            alt={member.name} 
+                                                        />
+                                                        <span className="text-sm">
+                                                            {member.name}
+                                                            {selectedGroup.admins?.includes(member.uid) && (
+                                                                <span className="ml-1 text-xs text-[#01AA85]">(Admin)</span>
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    {member.uid === currentUser.uid && !selectedGroup.creator && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (window.confirm('Are you sure you want to leave this group?')) {
+                                                                    leaveGroup(selectedGroup.id);
+                                                                    setShowMembersModal(false);
+                                                                }
+                                                            }}
+                                                            className="text-red-500 hover:text-red-600 text-sm flex items-center gap-1"
+                                                        >
+                                                            <RiUserUnfollowFill size={16} />
+                                                            Leave
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {filteredMembers.length === 0 && (
+                                                <div className="text-center text-gray-500 py-4">
+                                                    No members found
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Chat Confirmation Modal */}
+                    {showChatConfirmation && selectedMember && (
+                        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-[#D9F2ED] bg-opacity-20 backdrop-blur-sm">
+                            <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-xl">
+                                <h3 className="text-lg font-semibold text-[#2A3D39] mb-4">Open Chat</h3>
+                                <p className="text-gray-600 mb-6">
+                                    Do you want to open a chat with {selectedMember.name}?
+                                </p>
+                                <div className="flex justify-end gap-3">
+                                    <button
+                                        onClick={() => setShowChatConfirmation(false)}
+                                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleOpenChat}
+                                        className="px-4 py-2 bg-[#01AA85] text-white rounded-md hover:bg-[#018a6d]"
+                                    >
+                                        Open Chat
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </section>
             ) : (

@@ -3,12 +3,13 @@ import { useGroup } from '../context/GroupContext';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, getDoc, doc } from 'firebase/firestore';
-import { FaUsers, FaUserPlus, FaUserMinus, FaCrown } from 'react-icons/fa';
+import { FaUsers, FaUserPlus, FaUserMinus, FaCrown, FaSignOutAlt } from 'react-icons/fa';
 import { RiCloseFill, RiImageAddFill, RiGroupLine } from 'react-icons/ri';
 import defaultAvatar from "../assets/defaultavatar.png";
+import ConfirmationModal from './ConfirmationModal';
 
 const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
-  const { createGroup, updateGroup, addMembers, removeMembers, makeAdmin, removeAdmin } = useGroup();
+  const { createGroup, updateGroup, addMembers, removeMembers, makeAdmin, removeAdmin, leaveGroup } = useGroup();
   const { currentUser } = useAuth();
   const [groupName, setGroupName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -32,6 +33,7 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showProgress, setShowProgress] = useState(false);
   const [memberDetails, setMemberDetails] = useState([]);
+  const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -291,6 +293,21 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
     }
   };
 
+  const handleLeaveGroup = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      await leaveGroup(group.id);
+      onClose();
+    } catch (err) {
+      console.error('Error leaving group:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredUsers = availableUsers.filter(user => 
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
     !selectedUsers.includes(user.uid)
@@ -299,232 +316,86 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-center items-center bg-[#00170cb7]" onClick={onClose}>
-      <div className="relative p-4 w-full max-w-md max-h-full" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-white rounded-lg p-6 w-[90%] max-w-md shadow-xl">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-[#2A3D39]">
-              {mode === 'create' ? 'Create New Group' : 'Edit Group'}
-            </h2>
-            <button 
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 transition-colors duration-200"
-            >
-              <RiCloseFill size={24} />
-            </button>
-          </div>
-          
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
+    <>
+      <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 ${isOpen ? 'block' : 'hidden'}`}>
+        <div className="relative p-4 w-full max-w-md max-h-full" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-lg p-6 w-[90%] max-w-md shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-[#2A3D39]">
+                {mode === 'create' ? 'Create New Group' : 'Edit Group'}
+              </h2>
+              <button 
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 transition-colors duration-200"
+              >
+                <RiCloseFill size={24} />
+              </button>
             </div>
-          )}
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2">
-              Group Name
-            </label>
-            <input
-              type="text"
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-              className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85]"
-              placeholder="Enter group name"
-            />
-          </div>
-          
-          {mode === 'create' ? (
-            <>
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Select Members
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    onFocus={() => setShowUserList(true)}
-                    onBlur={() => {
-                      setTimeout(() => setShowUserList(false), 200);
-                    }}
-                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85]"
-                    placeholder="Search users..."
-                  />
-                  
-                  {showUserList && (
-                    <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-60 overflow-y-auto">
-                      {filteredUsers.map(user => (
-                        <div
-                          key={user.uid}
-                          className="p-2 hover:bg-gray-100 cursor-pointer flex items-center"
-                          onClick={() => {
-                            setSelectedUsers([...selectedUsers, user.uid]);
-                            setSearchTerm('');
-                          }}
-                        >
-                          <img
-                            src={user.profile_pic || defaultAvatar}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full mr-2"
-                          />
-                          <span>{user.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                {error}
               </div>
-              
-              <div className="mb-4">
-                <h3 className="text-sm font-bold mb-2">Selected Members:</h3>
-                <div className="flex flex-wrap gap-2">
-                  {selectedUsers.map(userId => {
-                    const user = availableUsers.find(u => u.uid === userId);
-                    return user ? (
-                      <div
-                        key={userId}
-                        className="bg-[#D9F2ED] text-[#01AA85] px-2 py-1 rounded-full flex items-center"
-                      >
-                        <img
-                          src={user.profile_pic || defaultAvatar}
-                          alt={user.name}
-                          className="w-4 h-4 rounded-full mr-1"
-                        />
-                        <span className="text-xs">{user.name}</span>
-                        <button
-                          onClick={() => setSelectedUsers(selectedUsers.filter(id => id !== userId))}
-                          className="ml-1 text-[#01AA85] hover:text-[#018a6d]"
-                        >
-                          <RiCloseFill size={10} />
-                        </button>
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-              
-              <div className="flex justify-end">
-                <button
-                  onClick={handleCreateGroup}
-                  disabled={loading}
-                  className="px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 disabled:opacity-50"
-                >
-                  {loading ? 'Creating...' : 'Create Group'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="mb-4">
-                <h3 className="text-sm font-bold mb-2">Group Members:</h3>
-                <div className="max-h-60 overflow-y-auto">
-                  {groupMembers.map(member => (
-                    <div
-                      key={member.id}
-                      className="flex items-center justify-between p-2 border-b"
-                    >
-                      <div className="flex items-center">
-                        <img
-                          src={member.profile_pic || defaultAvatar}
-                          alt={member.name}
-                          className="w-8 h-8 rounded-full mr-2"
-                        />
-                        <div>
-                          <div className="font-medium">{member.name}</div>
-                          <div className="text-xs text-gray-500">
-                            {groupAdmins.includes(member.id) ? 'Admin' : 'Member'}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex space-x-2">
-                        {member.id !== group.creator && (
-                          <>
-                            {groupAdmins.includes(member.id) ? (
-                              <button
-                                onClick={() => handleRemoveAdmin(member.id)}
-                                className="text-[#01AA85] hover:text-[#018a6d] transition-colors duration-200"
-                                title="Remove as admin"
-                              >
-                                <FaCrown />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleMakeAdmin(member.id)}
-                                className="text-gray-600 hover:text-gray-800 transition-colors duration-200"
-                                title="Make admin"
-                              >
-                                <FaCrown />
-                              </button>
-                            )}
-                            
-                            <button
-                              onClick={() => handleRemoveMember(member.id)}
-                              className="text-red-600 hover:text-red-800 transition-colors duration-200"
-                              title="Remove from group"
-                            >
-                              <FaUserMinus />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Add More Members
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85]"
-                    placeholder="Search users..."
-                  />
-                  
-                  {searchLoading && (
-                    <div className="absolute right-2 top-2">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#01AA85]"></div>
-                    </div>
-                  )}
-                  
-                  {searchError && (
-                    <p className="text-red-500 text-sm mt-1">{searchError}</p>
-                  )}
-                  
-                  {searchResults.length > 0 && (
-                    <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-60 overflow-y-auto">
-                      {searchResults.map(user => (
-                        <div
-                          key={user.id}
-                          className="p-2 hover:bg-gray-100 cursor-pointer flex items-center"
-                          onClick={() => {
-                            setSelectedUsers([...selectedUsers, user.id]);
-                            setSearchQuery('');
-                            setSearchResults([]);
-                          }}
-                        >
-                          <img
-                            src={user.profile_pic || defaultAvatar}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full mr-2"
-                          />
-                          <span>{user.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {selectedUsers.length > 0 && (
+            )}
+            
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2">
+                Group Name
+              </label>
+              <input
+                type="text"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85]"
+                placeholder="Enter group name"
+              />
+            </div>
+            
+            {mode === 'create' ? (
+              <>
                 <div className="mb-4">
-                  <h3 className="text-sm font-bold mb-2">Selected Users to Add:</h3>
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Select Members
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onFocus={() => setShowUserList(true)}
+                      onBlur={() => {
+                        setTimeout(() => setShowUserList(false), 200);
+                      }}
+                      className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85]"
+                      placeholder="Search users..."
+                    />
+                    
+                    {showUserList && (
+                      <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-60 overflow-y-auto">
+                        {filteredUsers.map(user => (
+                          <div
+                            key={user.uid}
+                            className="p-2 hover:bg-gray-100 cursor-pointer flex items-center"
+                            onClick={() => {
+                              setSelectedUsers([...selectedUsers, user.uid]);
+                              setSearchTerm('');
+                            }}
+                          >
+                            <img
+                              src={user.profile_pic || defaultAvatar}
+                              alt={user.name}
+                              className="w-8 h-8 rounded-full mr-2"
+                            />
+                            <span>{user.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold mb-2">Selected Members:</h3>
                   <div className="flex flex-wrap gap-2">
                     {selectedUsers.map(userId => {
                       const user = availableUsers.find(u => u.uid === userId);
@@ -549,31 +420,204 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
                       ) : null;
                     })}
                   </div>
-                  
+                </div>
+                
+                <div className="flex justify-end">
                   <button
-                    onClick={handleAddMembers}
+                    onClick={handleCreateGroup}
                     disabled={loading}
-                    className="mt-2 px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 text-sm disabled:opacity-50"
+                    className="px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 disabled:opacity-50"
                   >
-                    {loading ? 'Adding...' : 'Add Selected Users'}
+                    {loading ? 'Creating...' : 'Create Group'}
                   </button>
                 </div>
-              )}
-              
-              <div className="flex justify-end">
-                <button
-                  onClick={handleUpdateGroup}
-                  disabled={loading}
-                  className="px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 disabled:opacity-50"
-                >
-                  {loading ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold mb-2">Group Members:</h3>
+                  <div className="max-h-60 overflow-y-auto">
+                    {groupMembers.map(member => (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between p-2 border-b"
+                      >
+                        <div className="flex items-center">
+                          <img
+                            src={member.profile_pic || defaultAvatar}
+                            alt={member.name}
+                            className="w-8 h-8 rounded-full mr-2"
+                          />
+                          <div>
+                            <div className="font-medium">{member.name}</div>
+                            <div className="text-xs text-gray-500">
+                              {groupAdmins.includes(member.id) ? 'Admin' : 'Member'}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex space-x-2">
+                          {member.id !== group.creator && (
+                            <>
+                              {groupAdmins.includes(member.id) ? (
+                                <button
+                                  onClick={() => handleRemoveAdmin(member.id)}
+                                  className="text-[#01AA85] hover:text-[#018a6d] transition-colors duration-200"
+                                  title="Remove as admin"
+                                >
+                                  <FaCrown />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleMakeAdmin(member.id)}
+                                  className="text-gray-600 hover:text-gray-800 transition-colors duration-200"
+                                  title="Make admin"
+                                >
+                                  <FaCrown />
+                                </button>
+                              )}
+                              
+                              <button
+                                onClick={() => handleRemoveMember(member.id)}
+                                className="text-red-600 hover:text-red-800 transition-colors duration-200"
+                                title="Remove from group"
+                              >
+                                <FaUserMinus />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Add More Members
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#01AA85]"
+                      placeholder="Search users..."
+                    />
+                    
+                    {searchLoading && (
+                      <div className="absolute right-2 top-2">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#01AA85]"></div>
+                      </div>
+                    )}
+                    
+                    {searchError && (
+                      <p className="text-red-500 text-sm mt-1">{searchError}</p>
+                    )}
+                    
+                    {searchResults.length > 0 && (
+                      <div className="absolute z-10 w-full bg-white border rounded-b shadow-lg max-h-60 overflow-y-auto">
+                        {searchResults.map(user => (
+                          <div
+                            key={user.id}
+                            className="p-2 hover:bg-gray-100 cursor-pointer flex items-center"
+                            onClick={() => {
+                              setSelectedUsers([...selectedUsers, user.id]);
+                              setSearchQuery('');
+                              setSearchResults([]);
+                            }}
+                          >
+                            <img
+                              src={user.profile_pic || defaultAvatar}
+                              alt={user.name}
+                              className="w-8 h-8 rounded-full mr-2"
+                            />
+                            <span>{user.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {selectedUsers.length > 0 && (
+                  <div className="mb-4">
+                    <h3 className="text-sm font-bold mb-2">Selected Users to Add:</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedUsers.map(userId => {
+                        const user = availableUsers.find(u => u.uid === userId);
+                        return user ? (
+                          <div
+                            key={userId}
+                            className="bg-[#D9F2ED] text-[#01AA85] px-2 py-1 rounded-full flex items-center"
+                          >
+                            <img
+                              src={user.profile_pic || defaultAvatar}
+                              alt={user.name}
+                              className="w-4 h-4 rounded-full mr-1"
+                            />
+                            <span className="text-xs">{user.name}</span>
+                            <button
+                              onClick={() => setSelectedUsers(selectedUsers.filter(id => id !== userId))}
+                              className="ml-1 text-[#01AA85] hover:text-[#018a6d]"
+                            >
+                              <RiCloseFill size={10} />
+                            </button>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                    
+                    <button
+                      onClick={handleAddMembers}
+                      disabled={loading}
+                      className="mt-2 px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 text-sm disabled:opacity-50"
+                    >
+                      {loading ? 'Adding...' : 'Add Selected Users'}
+                    </button>
+                  </div>
+                )}
+                
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleUpdateGroup}
+                    disabled={loading}
+                    className="px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 disabled:opacity-50"
+                  >
+                    {loading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
+        
+        {mode !== 'create' && group && group.createdBy !== currentUser?.uid && (
+          <div className="mt-6 border-t border-gray-200 pt-4">
+            <button
+              onClick={() => setShowLeaveConfirmation(true)}
+              className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-red-100 text-red-600 rounded-md hover:bg-red-200 transition-colors"
+            >
+              <FaSignOutAlt />
+              Leave Group
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+      
+      {showLeaveConfirmation && (
+        <ConfirmationModal
+          isOpen={showLeaveConfirmation}
+          onClose={() => setShowLeaveConfirmation(false)}
+          onConfirm={handleLeaveGroup}
+          title="Leave Group"
+          message={`Are you sure you want to leave "${group?.name}"? You will no longer receive messages from this group.`}
+          confirmText="Leave"
+          cancelText="Cancel"
+          confirmButtonClass="bg-red-600 hover:bg-red-700"
+        />
+      )}
+    </>
   );
 };
 
