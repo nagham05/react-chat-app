@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import defaultAvatar from "../assets/defaultavatar.png";
 import { RiMore2Fill } from "react-icons/ri";
-import { FaUsers, FaPlus } from "react-icons/fa";
+import { FaUsers, FaPlus, FaBan } from "react-icons/fa";
 import SearchModal from "./SearchModal";
 import { useAuth } from "../context/AuthContext";
 import { useGroup } from "../context/GroupContext";
@@ -64,13 +64,25 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
           if (!userDoc.empty) {
             const userData = userDoc.docs[0].data();
             const lastMessage = sentMessages.find(msg => msg.receiverId === userId);
+            
+            // Check if user is blocked
+            const blockedRef = collection(db, 'Blocked');
+            const blockedQuery = query(
+              blockedRef,
+              where('blockerId', '==', currentUser.uid),
+              where('blockedId', '==', userId)
+            );
+            const blockedSnapshot = await getDocs(blockedQuery);
+            const isBlocked = !blockedSnapshot.empty;
+
             return {
               id: userId,
               ...userData,
               lastMessage: lastMessage?.content || '',
               lastMessageTime: lastMessage?.sentAt || null,
               messageType: lastMessage?.type || 'text',
-              isGroup: false
+              isGroup: false,
+              isBlocked
             };
           }
         });
@@ -114,13 +126,25 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
           if (!userDoc.empty) {
             const userData = userDoc.docs[0].data();
             const lastMessage = receivedMessages.find(msg => msg.senderId === userId);
+            
+            // Check if user is blocked
+            const blockedRef = collection(db, 'Blocked');
+            const blockedQuery = query(
+              blockedRef,
+              where('blockerId', '==', currentUser.uid),
+              where('blockedId', '==', userId)
+            );
+            const blockedSnapshot = await getDocs(blockedQuery);
+            const isBlocked = !blockedSnapshot.empty;
+
             return {
               id: userId,
               ...userData,
               lastMessage: lastMessage?.content || '',
               lastMessageTime: lastMessage?.sentAt || null,
               messageType: lastMessage?.type || 'text',
-              isGroup: false
+              isGroup: false,
+              isBlocked
             };
           }
         });
@@ -320,10 +344,15 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                   />
                 )}
                 <span>
-                  <h2 className="p-0 font-semibold text-[#2A3d39] text-left text-[17px]">{chat.name}</h2>
+                  <div className="flex items-center">
+                    <h2 className="p-0 font-semibold text-[#2A3d39] text-left text-[17px]">{chat.name}</h2>
+                    {!chat.isGroup && chat.isBlocked && (
+                      <FaBan className="text-red-500 ml-2" title="Blocked User" />
+                    )}
+                  </div>
                   <p className="p-0 font-light text-[#2A3d39] text-left text-[14px]">
                     {chat.isGroup ? (
-              <span>
+                      <span>
                         {chat.lastMessageSender ? `${chat.lastMessageSender}: ` : ''}
                         {chat.messageType === 'text' ? chat.lastMessage : 'Shared a file'}
                       </span>
@@ -331,12 +360,12 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                       chat.messageType === 'text' ? chat.lastMessage : 'Shared a file'
                     )}
                   </p>
-              </span>
-            </div>
+                </span>
+              </div>
               <p className="p-0 font-regular text-gray-400 text-left text-[11px]">
                 {formatTimestamp(chat.lastMessageTime)}
               </p>
-          </button>
+            </button>
           ))
         )}
       </main>
