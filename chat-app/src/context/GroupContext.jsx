@@ -378,61 +378,47 @@ export function GroupProvider({ children }) {
       if (!groupDoc.exists()) {
         throw new Error('Group not found');
       }
-      
+
       const groupData = groupDoc.data();
       
-      // Check if the user is a member of the group
+      // Check if user is a member
       if (!groupData.members.includes(currentUser.uid)) {
         throw new Error('You are not a member of this group');
       }
-      
-      // Check if the user is the creator of the group
-      if (groupData.createdBy === currentUser.uid) {
+
+      // Check if user is the creator
+      if (groupData.creator === currentUser.uid) {
         throw new Error('Group creator cannot leave the group. You must delete the group instead.');
       }
-      
-      // Remove the user from the members array
+
+      // Remove user from members array
       const updatedMembers = groupData.members.filter(memberId => memberId !== currentUser.uid);
       
-      // Remove the user from the admins array if they are an admin
-      const updatedAdmins = groupData.admins.filter(adminId => adminId !== currentUser.uid);
+      // If user is an admin, remove from admins array as well
+      const updatedAdmins = groupData.admins?.filter(adminId => adminId !== currentUser.uid) || [];
       
-      // Update the group document
+      // Update group document
       await updateDoc(groupRef, {
         members: updatedMembers,
         admins: updatedAdmins,
         updatedAt: serverTimestamp()
       });
-      
-      // If this was the last message, update the group's last message
-      if (groupData.lastMessageSender === currentUser.displayName) {
-        // Get the new last message
-        const messagesRef = collection(db, 'Groups', groupId, 'Messages');
-        const q = query(messagesRef, where('type', '==', 'text'), orderBy('sentAt', 'desc'), limit(1));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-          const lastMessage = querySnapshot.docs[0].data();
-          await updateDoc(groupRef, {
-            lastMessage: lastMessage.content,
-            lastMessageTime: lastMessage.sentAt,
-            lastMessageSender: lastMessage.senderName,
-            updatedAt: serverTimestamp()
-          });
-        } else {
-          // No more messages
-          await updateDoc(groupRef, {
-            lastMessage: null,
-            lastMessageTime: null,
-            lastMessageSender: null,
-            updatedAt: serverTimestamp()
-          });
-        }
+
+      // Add a system message about leaving
+      const messagesRef = collection(db, 'Groups', groupId, 'Messages');
+      await addDoc(messagesRef, {
+        type: 'system',
+        content: `${currentUser.name} left the group`,
+        sentAt: serverTimestamp(),
+        senderId: currentUser.uid
+      });
+
+      // Update local state without triggering getGroups
+      setGroups(prevGroups => prevGroups.filter(group => group.id !== groupId));
+      if (selectedGroup?.id === groupId) {
+        setSelectedGroup(null);
       }
-      
-      // Refresh the groups list
-      await getGroups();
-      
+
       return true;
     } catch (err) {
       console.error('Error leaving group:', err);

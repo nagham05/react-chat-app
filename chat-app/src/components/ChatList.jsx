@@ -380,7 +380,7 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                   </div>
                   <p className="p-0 font-light text-[#2A3d39] text-left text-[14px]">
                     {chat.isGroup ? (
-                      <span>
+              <span>
                         {chat.lastMessageSender ? `${chat.lastMessageSender}: ` : ''}
                         {chat.messageType === 'text' ? chat.lastMessage : 'Shared a file'}
                       </span>
@@ -388,8 +388,8 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                       chat.messageType === 'text' ? chat.lastMessage : 'Shared a file'
                     )}
                   </p>
-                </span>
-              </div>
+              </span>
+            </div>
               <div className="flex flex-col items-end">
                 <p className="p-0 font-regular text-gray-400 text-left text-[11px]">
                   {formatTimestamp(chat.lastMessageTime)}
@@ -400,7 +400,7 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                   </span>
                 )}
               </div>
-            </button>
+          </button>
           ))
         )}
       </main>
