@@ -735,7 +735,7 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
                             >
                                 <RiSearchLine size={24} />
                             </button>
-                            {isGroupChat && (
+                            {isGroupChat && selectedGroup.admins?.includes(currentUser.uid) && (
                                 <button 
                                     onClick={() => setShowGroupModal(true)}
                                     className="text-[#2A3D39] hover:text-[#01AA85] transition-colors"

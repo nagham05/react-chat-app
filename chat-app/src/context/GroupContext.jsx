@@ -899,9 +899,16 @@ export function GroupProvider({ children }) {
     }
   };
 
-  // Remove a user as an admin
+  // Remove admin from a group
   const removeAdmin = async (groupId, memberId) => {
     try {
+      setLoading(true);
+      setError(null);
+
+      if (!currentUser) {
+        throw new Error('User must be logged in to remove an admin');
+      }
+
       const groupRef = doc(db, 'Groups', groupId);
       const groupDoc = await getDoc(groupRef);
       
@@ -910,48 +917,57 @@ export function GroupProvider({ children }) {
       }
       
       const groupData = groupDoc.data();
-      const currentAdmins = groupData.admins || [];
       
-      if (!currentAdmins.includes(memberId)) {
-        return true; // Not an admin
+      // Check if the current user is an admin
+      if (!groupData.admins.includes(currentUser.uid)) {
+        throw new Error('Only admins can remove other admins');
       }
       
-      // Ensure the creator remains an admin
-      if (groupData.creator === memberId) {
-        throw new Error('Cannot remove admin status from the group creator');
+      // Check if the target user is an admin
+      if (!groupData.admins.includes(memberId)) {
+        throw new Error('This user is not an admin');
       }
       
-      const newAdmins = currentAdmins.filter(id => id !== memberId);
-      await updateDoc(groupRef, { admins: newAdmins });
+      // Cannot remove the creator's admin status
+      if (memberId === groupData.creator) {
+        throw new Error('Cannot remove creator\'s admin status');
+      }
       
-      // Add a system message about the removed admin
-      const membersCollection = collection(db, 'Groups', groupId, 'Messages');
+      // Remove the user from admins array
+      const updatedAdmins = groupData.admins.filter(id => id !== memberId);
+      
+      await updateDoc(groupRef, {
+        admins: updatedAdmins,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Add a system message
+      const messagesRef = collection(db, 'Groups', groupId, 'Messages');
       const userDoc = await getDoc(doc(db, 'Users', memberId));
       const userName = userDoc.exists() ? userDoc.data().name : 'Unknown User';
       
-      await addDoc(membersCollection, {
+      await addDoc(messagesRef, {
         type: 'system',
         content: `${currentUser.name} removed ${userName} as admin`,
         sentAt: serverTimestamp(),
         senderId: currentUser.uid
       });
       
-      // Update the local state to reflect changes immediately
-      setGroups(prevGroups => 
-        prevGroups.map(group => 
-          group.id === groupId ? { ...group, admins: newAdmins } : group
-        )
-      );
-      
-      // If the current group is being updated, update it as well
+      // Update local state
       if (selectedGroup?.id === groupId) {
-        setSelectedGroup(prev => ({ ...prev, admins: newAdmins }));
+        setSelectedGroup(prev => ({
+          ...prev,
+          admins: updatedAdmins
+        }));
       }
       
       return true;
-    } catch (error) {
-      console.error('Error removing admin:', error);
-      throw error;
+    } catch (err) {
+      console.error('Error removing admin:', err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -960,47 +976,43 @@ export function GroupProvider({ children }) {
     loading,
     error,
     indexError,
-    createGroup,
+    selectedGroup,
+    setSelectedGroup,
     getGroups,
     getGroup,
+    createGroup,
     updateGroup,
+    deleteGroup,
     addMembers,
     removeMembers,
-    leaveGroup,
-    deleteGroup,
-    sendGroupMessage,
-    getGroupMessages,
-    deleteGroupMessage,
-    editGroupMessage,
-    addGroupReaction,
-    removeGroupReaction,
     makeAdmin,
-    removeAdmin
+    removeAdmin,
+    leaveGroup,
+    sendGroupMessage,
+    getGroupMessages
   };
 
   return (
-    <GroupContext.Provider
-      value={{
-        groups,
-        selectedGroup,
-        loading,
-        error,
-        indexError,
-        getGroups,
-        createGroup,
-        addMembers,
-        removeMembers,
-        leaveGroup,
-        deleteGroup,
-        sendGroupMessage,
-        getGroupMessages,
-        editGroupMessage,
-        deleteGroupMessage,
-        addGroupReaction,
-        removeGroupReaction,
-        setSelectedGroup,
-      }}
-    >
+    <GroupContext.Provider value={{
+      groups,
+      loading,
+      error,
+      indexError,
+      selectedGroup,
+      setSelectedGroup,
+      getGroups,
+      getGroup,
+      createGroup,
+      updateGroup,
+      deleteGroup,
+      addMembers,
+      removeMembers,
+      makeAdmin,
+      removeAdmin,
+      leaveGroup,
+      sendGroupMessage,
+      getGroupMessages
+    }}>
       {children}
     </GroupContext.Provider>
   );
