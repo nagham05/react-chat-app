@@ -20,6 +20,30 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupToEdit, setGroupToEdit] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const [blockedUsers, setBlockedUsers] = useState(new Set());
+
+  // Effect to track blocked users in real-time
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const blockedRef = collection(db, 'Blocked');
+    const blockedQuery = query(
+      blockedRef,
+      where('blockerId', '==', currentUser.uid)
+    );
+
+    const unsubscribe = onSnapshot(blockedQuery, (snapshot) => {
+      const blockedIds = new Set();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        blockedIds.add(data.blockedId);
+      });
+      setBlockedUsers(blockedIds);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
 
   // Effect to fetch groups
   useEffect(() => {
@@ -65,16 +89,6 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
             const userData = userDoc.docs[0].data();
             const lastMessage = sentMessages.find(msg => msg.receiverId === userId);
             
-            // Check if user is blocked
-            const blockedRef = collection(db, 'Blocked');
-            const blockedQuery = query(
-              blockedRef,
-              where('blockerId', '==', currentUser.uid),
-              where('blockedId', '==', userId)
-            );
-            const blockedSnapshot = await getDocs(blockedQuery);
-            const isBlocked = !blockedSnapshot.empty;
-
             return {
               id: userId,
               ...userData,
@@ -82,7 +96,7 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
               lastMessageTime: lastMessage?.sentAt || null,
               messageType: lastMessage?.type || 'text',
               isGroup: false,
-              isBlocked
+              isBlocked: blockedUsers.has(userId)
             };
           }
         });
@@ -127,16 +141,6 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
             const userData = userDoc.docs[0].data();
             const lastMessage = receivedMessages.find(msg => msg.senderId === userId);
             
-            // Check if user is blocked
-            const blockedRef = collection(db, 'Blocked');
-            const blockedQuery = query(
-              blockedRef,
-              where('blockerId', '==', currentUser.uid),
-              where('blockedId', '==', userId)
-            );
-            const blockedSnapshot = await getDocs(blockedQuery);
-            const isBlocked = !blockedSnapshot.empty;
-
             return {
               id: userId,
               ...userData,
@@ -144,7 +148,7 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
               lastMessageTime: lastMessage?.sentAt || null,
               messageType: lastMessage?.type || 'text',
               isGroup: false,
-              isBlocked
+              isBlocked: blockedUsers.has(userId)
             };
           }
         });
@@ -178,6 +182,30 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
       unsubscribe1();
       unsubscribe2();
     };
+  }, [currentUser, blockedUsers]);
+
+  // Effect to track unread messages
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const messagesRef = collection(db, 'Messages');
+    const unreadQuery = query(
+      messagesRef,
+      where('receiverId', '==', currentUser.uid),
+      where('read', '==', false)
+    );
+
+    const unsubscribe = onSnapshot(unreadQuery, (snapshot) => {
+      const counts = {};
+      snapshot.docs.forEach(doc => {
+        const message = doc.data();
+        const senderId = message.senderId;
+        counts[senderId] = (counts[senderId] || 0) + 1;
+      });
+      setUnreadCounts(counts);
+    });
+
+    return () => unsubscribe();
   }, [currentUser]);
 
   // Combine direct chats and group chats
@@ -322,7 +350,7 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
           allChats.map((chat) => (
             <button 
               key={chat.isGroup ? `group_${chat.id}` : chat.id} 
-              className="flex items-start justify-between w-[100%] border-b border-[#9090902c] px-5 pb-3 pt-3 hover:bg-gray-50"
+              className="flex items-start justify-between w-[100%] border-b border-[#9090902c] px-5 pb-3 pt-3 hover:bg-gray-50 relative"
               onClick={() => startChat(chat)}
               onContextMenu={(e) => {
                 if (chat.isGroup) {
@@ -346,7 +374,7 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                 <span>
                   <div className="flex items-center">
                     <h2 className="p-0 font-semibold text-[#2A3d39] text-left text-[17px]">{chat.name}</h2>
-                    {!chat.isGroup && chat.isBlocked && (
+                    {!chat.isGroup && blockedUsers.has(chat.id) && (
                       <FaBan className="text-red-500 ml-2" title="Blocked User" />
                     )}
                   </div>
@@ -362,9 +390,16 @@ const ChatList = ({ setSelectedUser, setSelectedGroup }) => {
                   </p>
                 </span>
               </div>
-              <p className="p-0 font-regular text-gray-400 text-left text-[11px]">
-                {formatTimestamp(chat.lastMessageTime)}
-              </p>
+              <div className="flex flex-col items-end">
+                <p className="p-0 font-regular text-gray-400 text-left text-[11px]">
+                  {formatTimestamp(chat.lastMessageTime)}
+                </p>
+                {!chat.isGroup && unreadCounts[chat.id] > 0 && (
+                  <span className="bg-[#01AA85] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center mt-1">
+                    {unreadCounts[chat.id]}
+                  </span>
+                )}
+              </div>
             </button>
           ))
         )}
