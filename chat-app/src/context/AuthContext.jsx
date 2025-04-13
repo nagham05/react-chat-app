@@ -321,100 +321,76 @@ export function AuthProvider({ children }) {
 
   // Add reaction to message
   const addReaction = async (messageId, reaction) => {
-    if (!currentUser) return;
-    
     try {
-      setLoading(true);
       const messageRef = doc(db, 'Messages', messageId);
       const messageDoc = await getDoc(messageRef);
       
       if (!messageDoc.exists()) {
         throw new Error('Message not found');
       }
-
-      const messageData = messageDoc.data();
-      const currentReactions = messageData.reactions || {};
       
-      // Handle old format where reactions are stored as numbers
-      if (typeof currentReactions[reaction] === 'number') {
-        // Convert old format to new format
-        currentReactions[reaction] = {
-          users: [currentUser.uid]
-        };
-      } else {
-        // Initialize the reaction structure if it doesn't exist
-        if (!currentReactions[reaction]) {
-          currentReactions[reaction] = { users: [] };
-        }
-
-        // Ensure the users array exists
-        if (!currentReactions[reaction].users) {
-          currentReactions[reaction].users = [];
-        }
-
-        // Check if user has already reacted with this emoji
-        const hasReacted = currentReactions[reaction].users.includes(currentUser.uid);
-        
-        if (hasReacted) {
-          // Remove the reaction if user already reacted
-          currentReactions[reaction].users = currentReactions[reaction].users.filter(
-            uid => uid !== currentUser.uid
-          );
-          
-          // Remove the reaction if no users have reacted
-          if (currentReactions[reaction].users.length === 0) {
-            delete currentReactions[reaction];
-          }
-        } else {
-          // Add the user's reaction
-          currentReactions[reaction].users.push(currentUser.uid);
-        }
+      const currentReactions = messageDoc.data().reactions || {};
+      let userReactions = currentReactions[reaction];
+      
+      // Ensure userReactions is an array
+      if (!Array.isArray(userReactions)) {
+        userReactions = [];
       }
-
-      await updateDoc(messageRef, { reactions: currentReactions });
+      
+      // Check if user has already reacted
+      if (userReactions.includes(currentUser.uid)) {
+        return;
+      }
+      
+      // Add user to the reaction array
+      const updatedReactions = {
+        ...currentReactions,
+        [reaction]: [...userReactions, currentUser.uid]
+      };
+      
+      await updateDoc(messageRef, {
+        reactions: updatedReactions
+      });
     } catch (error) {
       console.error('Error adding reaction:', error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
   // Remove reaction from message
   const removeReaction = async (messageId, reaction) => {
     try {
-      if (!messageId) {
-        throw new Error('Message ID is required');
-      }
-
-      // Get the message document first
       const messageRef = doc(db, 'Messages', messageId);
       const messageDoc = await getDoc(messageRef);
       
       if (!messageDoc.exists()) {
         throw new Error('Message not found');
       }
-
-      const messageData = messageDoc.data();
-      const currentReactions = messageData.reactions || {};
       
-      // Check if the reaction exists and has users array
-      if (currentReactions[reaction]?.users?.includes(currentUser.uid)) {
-        // Remove the user's reaction
-        currentReactions[reaction].users = currentReactions[reaction].users.filter(
-          id => id !== currentUser.uid
-        );
-        
-        // If no one has reacted with this emoji anymore, remove it
-        if (currentReactions[reaction].users.length === 0) {
-          delete currentReactions[reaction];
-        }
-        
-        // Update the message with the new reactions
-        await updateDoc(messageRef, {
-          reactions: currentReactions
-        });
+      const currentReactions = messageDoc.data().reactions || {};
+      let userReactions = currentReactions[reaction];
+      
+      // Ensure userReactions is an array
+      if (!Array.isArray(userReactions)) {
+        userReactions = [];
       }
+      
+      // Remove user from the reaction array
+      const updatedUserReactions = userReactions.filter(id => id !== currentUser.uid);
+      
+      const updatedReactions = {
+        ...currentReactions,
+        [reaction]: updatedUserReactions
+      };
+      
+      // If no users left for that reaction, remove the reaction entirely
+      if (updatedUserReactions.length === 0) {
+        delete updatedReactions[reaction];
+      }
+      
+      await updateDoc(messageRef, {
+        reactions: updatedReactions
+      });
     } catch (error) {
       console.error('Error removing reaction:', error);
       throw error;

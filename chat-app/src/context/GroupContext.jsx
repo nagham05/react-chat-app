@@ -975,30 +975,40 @@ export function GroupProvider({ children }) {
     removeAdmin,
     leaveGroup,
     sendGroupMessage,
-    getGroupMessages
+    getGroupMessages,
+    deleteGroupMessage,
+    editGroupMessage,
+    addGroupReaction,
+    removeGroupReaction
   };
 
   return (
-    <GroupContext.Provider value={{
-      groups,
-      loading,
-      error,
-      indexError,
-      selectedGroup,
-      setSelectedGroup,
-      getGroups,
-      getGroup,
-      createGroup,
-      updateGroup,
-      deleteGroup,
-      addMembers,
-      removeMembers,
-      makeAdmin,
-      removeAdmin,
-      leaveGroup,
-      sendGroupMessage,
-      getGroupMessages
-    }}>
+    <GroupContext.Provider 
+      value={{ 
+        groups,
+        loading,
+        error,
+        indexError,
+        selectedGroup,
+        setSelectedGroup,
+        getGroups,
+        createGroup,
+        getGroup,
+        updateGroup,
+        addMembers,
+        removeMembers,
+        leaveGroup,
+        deleteGroup,
+        sendGroupMessage,
+        getGroupMessages,
+        deleteGroupMessage,
+        editGroupMessage,
+        addGroupReaction,
+        removeGroupReaction,
+        makeAdmin,
+        removeAdmin
+      }}
+    >
       {children}
     </GroupContext.Provider>
   );

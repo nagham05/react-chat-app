@@ -82,22 +82,44 @@ const MessageContextMenu = ({ message, onClose, position, onMessageUpdate, isGro
     const handleReaction = async (reaction) => {
         try {
             const currentReactions = message.reactions || {};
-            let updatedReactions = { ...currentReactions };
+            const userReactions = currentReactions[reaction] || [];
+            const hasReacted = Array.isArray(userReactions) && userReactions.includes(currentUser.uid);
             
-            if (currentReactions[reaction]) {
-                if (isGroupChat) {
-                    await removeGroupReaction(groupId, message.id, reaction);
+            if (hasReacted) {
+                if (isGroupChat && groupId) {
+                    if (removeGroupReaction) {
+                        await removeGroupReaction(groupId, message.id, reaction);
+                    } else {
+                        console.error('removeGroupReaction function not available');
+                        return;
+                    }
                 } else {
                     await removeReaction(message.id, reaction);
                 }
-                delete updatedReactions[reaction];
             } else {
-                if (isGroupChat) {
-                    await addGroupReaction(groupId, message.id, reaction);
+                if (isGroupChat && groupId) {
+                    if (addGroupReaction) {
+                        await addGroupReaction(groupId, message.id, reaction);
+                    } else {
+                        console.error('addGroupReaction function not available');
+                        return;
+                    }
                 } else {
                     await addReaction(message.id, reaction);
                 }
-                updatedReactions[reaction] = (currentReactions[reaction] || 0) + 1;
+            }
+            
+            // Update the UI immediately
+            const updatedReactions = { ...currentReactions };
+            if (hasReacted) {
+                if (updatedReactions[reaction]) {
+                    updatedReactions[reaction] = updatedReactions[reaction].filter(id => id !== currentUser.uid);
+                    if (updatedReactions[reaction].length === 0) {
+                        delete updatedReactions[reaction];
+                    }
+                }
+            } else {
+                updatedReactions[reaction] = [...(updatedReactions[reaction] || []), currentUser.uid];
             }
             
             onMessageUpdate(message.id, { reactions: updatedReactions });

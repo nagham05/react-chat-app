@@ -95,7 +95,8 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
             unsubscribe = onSnapshot(q, (snapshot) => {
                 const newMessages = snapshot.docs.map(doc => ({
                     id: doc.id,
-                    ...doc.data()
+                    ...doc.data(),
+                    groupId: selectedGroup.id // Add groupId to each message
                 }));
                 setMessages(newMessages);
             });
@@ -104,8 +105,6 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
             const messagesRef = collection(db, 'Messages');
             const q = query(
                 messagesRef,
-                where('senderId', 'in', [currentUser.uid, selectedUser.id]),
-                where('receiverId', 'in', [currentUser.uid, selectedUser.id]),
                 orderBy('sentAt', 'asc')
             );
             
@@ -113,15 +112,18 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
                 const newMessages = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
-                }));
+                }))
+                .filter(msg => 
+                    (msg.senderId === currentUser.uid && msg.receiverId === selectedUser.id) ||
+                    (msg.senderId === selectedUser.id && msg.receiverId === currentUser.uid)
+                );
                 setMessages(newMessages);
             });
         } else {
-            // Fetch all messages when no group or user is selected
+            // Fetch all messages for current user
             const messagesRef = collection(db, 'Messages');
             const q = query(
                 messagesRef,
-                where('senderId', '==', currentUser.uid),
                 orderBy('sentAt', 'asc')
             );
             
@@ -129,7 +131,8 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
                 const newMessages = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
-                }));
+                }))
+                .filter(msg => msg.senderId === currentUser.uid);
                 setMessages(newMessages);
             });
         }
@@ -235,11 +238,11 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
     // Filter messages based on whether it's a group or direct chat
     const filteredMessages = useMemo(() => {
         if (selectedGroup) {
-            // For group chats
-            return messages.filter(msg => msg.groupId === selectedGroup.id);
+            // For group chats, return all messages since they're already filtered by group
+            return messages;
         } else if (selectedUser) {
             // For direct messages
-            return messages.filter(msg => 
+        return messages.filter(msg => 
                 (msg.senderId === currentUser.uid && msg.receiverId === selectedUser.id) ||
                 (msg.senderId === selectedUser.id && msg.receiverId === currentUser.uid)
             );
@@ -288,15 +291,22 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
     const handleReactionClick = async (message, reaction) => {
         try {
             if (isGroupChat) {
-                // For group messages, use the group reaction functions
-                if (message.reactions?.[reaction]?.includes(currentUser.uid)) {
+                // For group messages
+                const reactions = message.reactions || {};
+                const userReactions = reactions[reaction] || [];
+                const hasReacted = Array.isArray(userReactions) && userReactions.includes(currentUser.uid);
+                
+                if (hasReacted) {
                     await removeGroupReaction(selectedGroup.id, message.id, reaction);
                 } else {
                     await addGroupReaction(selectedGroup.id, message.id, reaction);
                 }
             } else {
-                // For direct messages, check if the reaction exists and has users array
-                const hasReacted = message.reactions?.[reaction]?.users?.includes(currentUser.uid);
+                // For direct messages
+                const reactions = message.reactions || {};
+                const userReactions = reactions[reaction] || [];
+                const hasReacted = Array.isArray(userReactions) && userReactions.includes(currentUser.uid);
+                
                 if (hasReacted) {
                     await removeReaction(message.id, reaction);
                 } else {
@@ -480,17 +490,23 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
                 )}
                 
                 {/* Reactions */}
-                {message.reactions && Object.keys(message.reactions).length > 0 && (
+                {message.reactions && typeof message.reactions === 'object' && (
                     <div className="flex gap-1 mt-1">
-                        {Object.entries(message.reactions).map(([reaction, users]) => (
-                            <button
-                                key={reaction}
-                                onClick={() => handleReactionClick(message, reaction)}
-                                className="text-xs bg-white/20 px-1 rounded hover:bg-white/30 transition-colors"
-                            >
-                                {reaction} {users.length}
-                            </button>
-                        ))}
+                        {Object.entries(message.reactions).map(([reaction, users]) => {
+                            // Convert users to array if it's not already
+                            const userArray = Array.isArray(users) ? users : Object.keys(users || {});
+                            const count = userArray.length;
+                            
+                            return (
+                                <button
+                                    key={reaction}
+                                    onClick={() => handleReactionClick(message, reaction)}
+                                    className="text-xs bg-white/20 px-1 rounded hover:bg-white/30 transition-colors"
+                                >
+                                    {reaction} {count}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
                 
@@ -654,25 +670,44 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
         console.log(`Reacting to message ${messageId} with ${reaction}`);
     };
 
-    const handleMessageUpdate = async (messageId, newContent) => {
+    const handleMessageUpdate = async (messageId, updates) => {
         try {
-            if (selectedGroup) {
-                await editGroupMessage(selectedGroup.id, messageId, newContent);
-            } else if (selectedUser) {
-                // Handle direct message editing
-                const messagesRef = collection(db, 'Messages');
-                await updateDoc(doc(messagesRef, messageId), {
-                    content: newContent,
-                    edited: true,
-                    editedAt: serverTimestamp()
-                });
+            if (isGroupChat) {
+                // For group messages, check if the user is the sender
+                const message = messages.find(m => m.id === messageId);
+                if (!message) {
+                    console.error('Message not found');
+                    return;
+                }
+
+                if (message.senderId !== currentUser.uid) {
+                    console.error('You can only edit your own messages');
+                    return;
+                }
+
+                await editGroupMessage(selectedGroup.id, messageId, updates);
+            } else {
+                // For direct messages, check if the user is the sender
+                const message = messages.find(m => m.id === messageId);
+                if (!message) {
+                    console.error('Message not found');
+                    return;
+                }
+
+                if (message.senderId !== currentUser.uid) {
+                    console.error('You can only edit your own messages');
+                    return;
+                }
+
+                await editMessage(messageId, updates);
             }
-            // Update the message in the local state
+            
+            // Update the local state
             setMessages(prevMessages => 
-                prevMessages.map(msg => 
-                    msg.id === messageId 
-                        ? { ...msg, content: newContent, edited: true, editedAt: new Date() }
-                        : msg
+                prevMessages.map(message => 
+                    message.id === messageId 
+                        ? { ...message, ...updates } 
+                        : message
                 )
             );
         } catch (error) {
@@ -773,6 +808,18 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
                             className="flex items-center gap-3 cursor-pointer"
                             onClick={() => setShowContactDetails(true)}
                         >
+                            {/* Back arrow for small screens */}
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectUser(null);
+                                }}
+                                className="lg:hidden mr-2 text-[#2A3D39] hover:text-[#01AA85] transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </button>
                             <span>
                                 {isGroupChat ? (
                                     <div className="w-11 h-11 bg-[#01AA85] rounded-full flex items-center justify-center">
@@ -914,8 +961,8 @@ const ChatBox = ({ selectedUser, selectedGroup, onSelectUser }) => {
                                                 ? "You have blocked this user. You cannot send or receive messages from them."
                                                 : "This user has blocked you. You cannot send or receive messages from them."}
                                         </div>
-                                                                </div>
-                                                            )}
+                                                            </div>
+                                                        )}
                                 <div className="space-y-3">
                                     {filteredMessages.map((message, index) => {
                                         // Check if this message is from a different day than the previous one
