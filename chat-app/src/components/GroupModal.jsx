@@ -9,7 +9,7 @@ import defaultAvatar from "../assets/defaultavatar.png";
 import ConfirmationModal from './ConfirmationModal';
 
 const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
-  const { createGroup, updateGroup, addMembers, removeMembers, makeAdmin, removeAdmin, leaveGroup } = useGroup();
+  const { createGroup, updateGroup, addMembers, removeMembers, makeAdmin, removeAdmin, leaveGroup, deleteGroup } = useGroup();
   const { currentUser } = useAuth();
   const [groupName, setGroupName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -35,6 +35,8 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
   const [memberDetails, setMemberDetails] = useState([]);
   const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -317,6 +319,16 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
     }
   };
 
+  const handleDeleteGroup = async () => {
+    try {
+      await deleteGroup(group.id);
+      onClose();
+    } catch (error) {
+      console.error('Error deleting group:', error);
+      setError(error.message);
+    }
+  };
+
   const filteredUsers = availableUsers.filter(user => 
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
     !selectedUsers.includes(user.uid)
@@ -578,17 +590,25 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
                           })}
                         </div>
                         
-                        <button
-                          onClick={handleAddMembers}
-                          disabled={loading}
-                          className="mt-2 px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 text-sm disabled:opacity-50"
-                        >
-                          {loading ? 'Adding...' : 'Add Selected Users'}
-                        </button>
+                        <div className="flex justify-end">
+                          <button
+                            onClick={handleAddMembers}
+                            disabled={loading}
+                            className="px-4 py-2 bg-[#01AA85] text-white rounded hover:bg-[#018f6f] transition-colors duration-200 disabled:opacity-50"
+                          >
+                            {loading ? 'Adding...' : 'Add Selected Users'}
+                          </button>
+                        </div>
                       </div>
                     )}
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        onClick={() => setShowDeleteModal(true)}
+                        className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                      >
+                        Delete Group
+                      </button>
                       <button
                         onClick={handleUpdateGroup}
                         disabled={loading}
@@ -619,6 +639,17 @@ const GroupModal = ({ isOpen, onClose, group = null, mode = 'create' }) => {
           confirmButtonClass="bg-red-600 hover:bg-red-700"
         />
       )}
+
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDeleteGroup}
+        title="Delete Group"
+        message={`Are you sure you want to delete "${group?.name}"? This action cannot be undone and all messages will be permanently deleted.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        confirmButtonClass="bg-red-500 hover:bg-red-600"
+      />
     </>
   );
 };
